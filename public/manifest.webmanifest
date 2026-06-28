@@ -1,0 +1,17 @@
+{
+  "name": "AnkiWeb — مرور فاصله‌دار",
+  "short_name": "AnkiWeb",
+  "description": "اپ وب تکرار فاصله‌دار سازگار با Anki — وارد کردن دک‌های apkg و مطالعه با FSRS.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#14141f",
+  "theme_color": "#14141f",
+  "lang": "fa",
+  "dir": "rtl",
+  "icons": [
+    { "src": "favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "maskable" }
+  ]
+}
