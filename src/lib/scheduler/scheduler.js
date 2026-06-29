@@ -2,7 +2,8 @@
 // زمان‌بند یکپارچه — مراحل یادگیری (بر حسب دقیقه) مثل Anki + مرور با FSRS یا SM-2.
 // همه‌ی سررسیدها (due) و lastReview به صورت میلی‌ثانیه عددی ذخیره می‌شوند.
 import db from '../database/db';
-import { updateCard, logReview, getDeck } from '../database/models';
+import { updateCard, logReview, getDeck, updateDeck } from '../database/models';
+import { currentDaily } from '../day';
 import {
   Rating, State,
   DEFAULT_FSRS_PARAMS,
@@ -192,16 +193,14 @@ export function previewIntervals(card, deck, nowMs = Date.now()) {
   return out; // { again, hard, good, easy }
 }
 
-/** نمره دادن به کارت: محاسبه، ذخیره و ثبت در لاگ مرور. */
+/** نمره دادن به کارت: محاسبه، ذخیره، ثبت در لاگ مرور و به‌روزرسانی شمارنده‌ی روزانه. */
 export async function answerCard(card, rating, deck) {
   const nowMs = Date.now();
   const lastInterval = card.interval || 0;
+  const prevState = card.state;
   const updated = computeNext(card, rating, deck, nowMs);
 
-  await updateCard(card.id, {
-    ...updated,
-    modifiedAt: nowMs,
-  });
+  await updateCard(card.id, { ...updated, modifiedAt: nowMs });
 
   await logReview({
     cardId: card.id,
@@ -213,6 +212,16 @@ export async function answerCard(card, rating, deck) {
     scheduler: deckConfig(deck).scheduler,
     reviewedAt: nowMs,
   });
+
+  // شمارنده‌ی روزانه: معرفی کارت جدید یا انجام یک مرور را ثبت می‌کند.
+  const daily = currentDaily(deck);
+  if (prevState === State.New) daily.newDone += 1;
+  else if (prevState === State.Review) daily.revDone += 1;
+  const deckId = card.deckId ?? deck?.id;
+  if (deckId != null) {
+    await updateDeck(deckId, { daily });
+    if (deck) deck.daily = daily;
+  }
 
   return { ...card, ...updated };
 }
@@ -228,22 +237,27 @@ export async function buildStudyQueue(deckId) {
   const reviewLimit = c.reviewsPerDay ?? 200;
   const nowMs = Date.now();
 
+  // باقی‌مانده‌ی سهمیه‌ی امروز با احتساب آنچه پیش‌تر امروز انجام شده.
+  const daily = currentDaily(deck);
+  const newRemaining = Math.max(0, newLimit - daily.newDone);
+  const reviewRemaining = Math.max(0, reviewLimit - daily.revDone);
+
   const all = await db.cards.where('deckId').equals(Number(deckId)).toArray();
   const active = all.filter((x) => x.queue !== Queue.Suspended && x.queue !== Queue.Buried);
 
   const learning = active
-    .filter((x) => (x.state === State.Learning || x.state === State.Relearning) && (x.due ?? 0) <= nowMs)
+    .filter((x) => (x.state === State.Learning || x.state === State.Relearning))
     .sort((a, b) => (a.due ?? 0) - (b.due ?? 0));
 
   const newCards = active
     .filter((x) => x.state === State.New)
-    .sort((a, b) => (a.id ?? 0) - (b.id ?? 0))
-    .slice(0, newLimit);
+    .sort((a, b) => (a.pos ?? a.id ?? 0) - (b.pos ?? b.id ?? 0))
+    .slice(0, newRemaining);
 
   const reviews = active
     .filter((x) => x.state === State.Review && (x.due ?? 0) <= nowMs)
     .sort((a, b) => (a.due ?? 0) - (b.due ?? 0))
-    .slice(0, reviewLimit);
+    .slice(0, reviewRemaining);
 
   return { queue: [...learning, ...newCards, ...reviews], deck };
 }

@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useDecks } from '../hooks/useDecks.js';
-import { importApkgFile } from '../lib/apkg/index.js';
+import { renameDeck } from '../lib/database/models.js';
 
 export default function DeckList() {
   const { decks, counts, loading, addNewDeck, removeDeck, refresh } = useDecks();
@@ -9,6 +9,7 @@ export default function DeckList() {
   const [showNew, setShowNew] = useState(false);
   const [name, setName] = useState('');
   const [importing, setImporting] = useState(false);
+  const [progress, setProgress] = useState(null);
   const [toast, setToast] = useState(null);
   const fileRef = useRef(null);
 
@@ -29,15 +30,27 @@ export default function DeckList() {
     const file = e.target.files?.[0];
     e.target.value = '';
     if (!file) return;
+    const mb = file.size / 1048576;
+    if (mb > 80 && !confirm(
+      `این فایل بزرگ است (${mb.toFixed(0)}MB) و ورود آن ممکن است کمی طول بکشد و حافظه‌ی زیادی بگیرد (به‌ویژه روی موبایل). ادامه؟\nLarge file — import may be slow. Continue?`,
+    )) return;
+
     setImporting(true);
+    setProgress('در حال خواندن فایل... / Reading...');
     try {
-      const res = await importApkgFile(file);
+      const { importApkgFile } = await import('../lib/apkg/index.js'); // بارگذاری تنبل sql.js
+      const res = await importApkgFile(file, (p) => {
+        if (p.phase === 'parse') setProgress('در حال باز کردن فایل... / Unpacking...');
+        else if (p.phase === 'save') setProgress('در حال ذخیره‌ی کارت‌ها... / Saving cards...');
+        else if (p.phase === 'media') setProgress(`ذخیره‌ی مدیا / Media: ${p.done}/${p.total}`);
+      });
       await refresh();
-      flash(`وارد شد: ${res.cardCount} کارت در ${res.deckCount} دک`);
+      flash(`وارد شد / Imported: ${res.cardCount} کارت، ${res.mediaCount} مدیا`);
     } catch (err) {
-      flash(`خطا در ورود: ${err.message}`);
+      flash(`خطا در ورود / Import error: ${err.message}`);
     } finally {
       setImporting(false);
+      setProgress(null);
     }
   }, [refresh, flash]);
 
@@ -56,6 +69,13 @@ export default function DeckList() {
       </div>
 
       <input ref={fileRef} type="file" accept=".apkg,.colpkg,.zip" onChange={handleImport} style={{ display: 'none' }} />
+
+      {progress && (
+        <div className="card-box" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div className="spinner" style={{ margin: 0, width: 22, height: 22 }} />
+          <span>{progress}</span>
+        </div>
+      )}
 
       {showNew && (
         <form className="card-box" onSubmit={handleCreate}>
@@ -91,7 +111,15 @@ export default function DeckList() {
                 <span className="pill review">مرور {c.review || 0}</span>
               </div>
             </div>
-            <button className="icon-btn" title="مرور کارت‌ها" onClick={() => navigate(`/browse/${deck.id}`)}>✎</button>
+            <button className="icon-btn" title="مرور کارت‌ها / Browse" onClick={() => navigate(`/browse/${deck.id}`)}>✎</button>
+            <button
+              className="icon-btn"
+              title="تغییر نام / Rename"
+              onClick={async () => {
+                const name = prompt('نام جدید دک / New deck name:', deck.name);
+                if (name && name.trim()) { await renameDeck(deck.id, name.trim()); await refresh(); }
+              }}
+            >✏️</button>
             <button
               className="icon-btn"
               title="حذف دک"

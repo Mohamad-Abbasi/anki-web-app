@@ -1,5 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { createNote, updateNote, getModel, getModels, saveMedia } from '../lib/database/models.js';
+import {
+  createNote, updateNote, getModel, getModels, saveMedia,
+  getDecks, moveNote,
+} from '../lib/database/models.js';
 
 // توضیح فارسی برای نام فیلدهای استاندارد (انگلیسی هم نگه داشته می‌شود).
 const FIELD_HINTS = {
@@ -21,14 +24,18 @@ export default function CardEditor({ deckId, note, onClose }) {
   const [fields, setFields] = useState(note?.fields || []);
   const [tags, setTags] = useState((note?.tags || []).join(' '));
   const [activeField, setActiveField] = useState(0);
+  const [decks, setDecks] = useState([]);
+  const [targetDeck, setTargetDeck] = useState(note?.deckId ?? Number(deckId));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
 
   const imgInputRef = useRef(null);
   const audioInputRef = useRef(null);
+  const textareaRefs = useRef([]);
 
   useEffect(() => {
     getModels().then((all) => setModels(all));
+    getDecks().then(setDecks);
   }, []);
 
   useEffect(() => {
@@ -60,6 +67,15 @@ export default function CardEditor({ deckId, note, onClose }) {
     }
   }, [insertIntoActive]);
 
+  const wrap = useCallback((tag) => {
+    const ta = textareaRefs.current[activeField];
+    const val = fields[activeField] || '';
+    const s = ta ? ta.selectionStart : val.length;
+    const e = ta ? ta.selectionEnd : val.length;
+    const next = `${val.slice(0, s)}<${tag}>${val.slice(s, e)}</${tag}>${val.slice(e)}`;
+    setFields((prev) => { const n = [...prev]; n[activeField] = next; return n; });
+  }, [activeField, fields]);
+
   const handleSave = useCallback(async () => {
     if (!fields.some((f) => f && f.trim())) {
       setError('حداقل یک فیلد را پر کن. / Fill at least one field.');
@@ -71,6 +87,7 @@ export default function CardEditor({ deckId, note, onClose }) {
       const tagList = tags.split(/\s+/).filter(Boolean);
       if (note?.id) {
         await updateNote(note.id, { fields, tags: tagList });
+        if (Number(targetDeck) !== Number(note.deckId)) await moveNote(note.id, targetDeck);
       } else {
         await createNote({ deckId, modelId, fields, tags: tagList });
       }
@@ -80,7 +97,7 @@ export default function CardEditor({ deckId, note, onClose }) {
     } finally {
       setSaving(false);
     }
-  }, [fields, tags, note, deckId, modelId, onClose]);
+  }, [fields, tags, note, deckId, modelId, targetDeck, onClose]);
 
   const fieldNames = model?.flds || ['Front', 'Back'];
 
@@ -107,6 +124,7 @@ export default function CardEditor({ deckId, note, onClose }) {
               {FIELD_HINTS[fname] && <span className="lbl-hint"> — {FIELD_HINTS[fname]}</span>}
             </label>
             <textarea
+              ref={(el) => { textareaRefs.current[i] = el; }}
               rows={i === 0 ? 2 : 3}
               value={fields[i] || ''}
               onFocus={() => setActiveField(i)}
@@ -121,8 +139,11 @@ export default function CardEditor({ deckId, note, onClose }) {
           </div>
         ))}
 
-        {/* ابزار درج رسانه در فیلد فعال */}
-        <div className="row" style={{ marginBottom: 10 }}>
+        {/* ابزار قالب‌بندی و درج رسانه در فیلد فعال */}
+        <div className="row" style={{ marginBottom: 10, flexWrap: 'wrap' }}>
+          <button type="button" className="btn" onClick={() => wrap('b')} title="پررنگ / Bold"><b>B</b></button>
+          <button type="button" className="btn" onClick={() => wrap('i')} title="مورب / Italic"><i>I</i></button>
+          <button type="button" className="btn" onClick={() => wrap('u')} title="زیرخط / Underline"><u>U</u></button>
           <button type="button" className="btn" onClick={() => imgInputRef.current?.click()}>🖼 تصویر / Image</button>
           <button type="button" className="btn" onClick={() => audioInputRef.current?.click()}>🔊 صدا / Audio</button>
         </div>
@@ -139,6 +160,15 @@ export default function CardEditor({ deckId, note, onClose }) {
             Cloze: برای هر جای‌خالی از {'{{c1::پاسخ}}'} یا با راهنما {'{{c1::پاسخ::راهنما}}'} استفاده کن. شماره‌های متفاوت = کارت‌های جدا.<br />
             Use {'{{c1::answer}}'} or {'{{c1::answer::hint}}'}; different numbers create separate cards.
           </p>
+        )}
+
+        {note?.id && decks.length > 1 && (
+          <div className="field">
+            <label>انتقال به دک / Move to deck</label>
+            <select value={targetDeck} onChange={(e) => setTargetDeck(Number(e.target.value))}>
+              {decks.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+            </select>
+          </div>
         )}
 
         <div className="field">

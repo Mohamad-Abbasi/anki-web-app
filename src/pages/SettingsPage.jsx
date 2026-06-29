@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
 import { useDecks } from '../hooks/useDecks.js';
-import { exportToApkg } from '../lib/apkg/index.js';
 import { exportBackup, importBackup } from '../lib/backup.js';
 import db from '../lib/database/db.js';
 
@@ -10,7 +9,15 @@ export default function SettingsPage() {
   const [form, setForm] = useState(null);
   const [toast, setToast] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [theme, setTheme] = useState(localStorage.getItem('theme') || 'dark');
   const backupInputRef = useRef(null);
+
+  const toggleTheme = () => {
+    const next = theme === 'dark' ? 'light' : 'dark';
+    setTheme(next);
+    localStorage.setItem('theme', next);
+    document.documentElement.dataset.theme = next;
+  };
 
   useEffect(() => {
     if (decks.length && selectedId == null) setSelectedId(decks[0].id);
@@ -25,6 +32,7 @@ export default function SettingsPage() {
         reviewsPerDay: deck.config?.reviewsPerDay ?? 200,
         requestRetention: deck.config?.requestRetention ?? 0.9,
         learningSteps: (deck.config?.learningSteps ?? [1, 10]).join(' '),
+        relearningSteps: (deck.config?.relearningSteps ?? [10]).join(' '),
       });
     }
   }, [deck]);
@@ -41,6 +49,7 @@ export default function SettingsPage() {
         reviewsPerDay: Number(form.reviewsPerDay),
         requestRetention: Number(form.requestRetention),
         learningSteps: form.learningSteps.split(/\s+/).map(Number).filter((n) => n > 0),
+        relearningSteps: form.relearningSteps.split(/\s+/).map(Number).filter((n) => n > 0),
       },
     });
     flash('ذخیره شد');
@@ -49,6 +58,7 @@ export default function SettingsPage() {
   const handleExport = async () => {
     if (!deck) return;
     try {
+      const { exportToApkg } = await import('../lib/apkg/index.js');
       const blob = await exportToApkg(deck.id);
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -149,11 +159,17 @@ export default function SettingsPage() {
                     onChange={(e) => setForm({ ...form, requestRetention: e.target.value })} />
                 </div>
               )}
-              <div className="field">
-                <label>مراحل یادگیری (دقیقه، با فاصله)</label>
-                <input value={form.learningSteps} onChange={(e) => setForm({ ...form, learningSteps: e.target.value })} dir="ltr" />
+              <div className="row">
+                <div className="field" style={{ flex: 1 }}>
+                  <label>مراحل یادگیری (دقیقه) / Learning steps</label>
+                  <input value={form.learningSteps} onChange={(e) => setForm({ ...form, learningSteps: e.target.value })} dir="ltr" />
+                </div>
+                <div className="field" style={{ flex: 1 }}>
+                  <label>مراحل بازآموزی (دقیقه) / Relearning</label>
+                  <input value={form.relearningSteps} onChange={(e) => setForm({ ...form, relearningSteps: e.target.value })} dir="ltr" />
+                </div>
               </div>
-              <button className="btn primary block" onClick={save}>ذخیره‌ی تنظیمات</button>
+              <button className="btn primary block" onClick={save}>ذخیره‌ی تنظیمات / Save</button>
             </div>
           )}
 
@@ -166,6 +182,13 @@ export default function SettingsPage() {
           </div>
         </>
       )}
+
+      <div className="card-box">
+        <h3 style={{ marginBottom: 14 }}>ظاهر / Appearance</h3>
+        <button className="btn block" onClick={toggleTheme}>
+          {theme === 'dark' ? '☀️ تم روشن / Light theme' : '🌙 تم تاریک / Dark theme'}
+        </button>
+      </div>
 
       <div className="card-box">
         <h3 style={{ marginBottom: 14 }}>پشتیبان‌گیری / Backup</h3>

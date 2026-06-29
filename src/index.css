@@ -18,6 +18,19 @@
   --nav-h: 64px;
 }
 
+:root[data-theme="light"] {
+  --bg: #f3f4f8;
+  --bg-2: #ffffff;
+  --surface: #ffffff;
+  --surface-2: #eef1f7;
+  --border: #d9dde8;
+  --primary: #2bb3e0;
+  --primary-strong: #1c93bd;
+  --text: #1a1f2e;
+  --muted: #6b7191;
+  --shadow: 0 6px 20px rgba(20, 30, 60, 0.08);
+}
+
 * , *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 html, body, #root { height: 100%; }
@@ -153,7 +166,9 @@ input:focus, textarea:focus, select:focus {
   display: flex; flex-direction: column; align-items: center; justify-content: center;
   text-align: center; min-height: 280px; font-size: 1.3rem; overflow-wrap: anywhere;
 }
+.flashcard { position: relative; }
 .flashcard .face { width: 100%; }
+.replay-btn { position: absolute; bottom: 10px; inset-inline-start: 10px; background: var(--surface-2); border: 1px solid var(--border); color: var(--text); width: 38px; height: 38px; border-radius: 50%; font-size: 1rem; }
 .flashcard img { max-width: 100%; height: auto; border-radius: 8px; }
 .flashcard hr { width: 100%; border: none; border-top: 1px solid var(--border); margin: 18px 0; }
 .flashcard .cloze { color: var(--primary); font-weight: 800; }
@@ -185,6 +200,9 @@ input:focus, textarea:focus, select:focus {
 .stat .cap { font-size: 0.8rem; color: var(--muted); margin-top: 4px; }
 .bars { display: flex; align-items: flex-end; gap: 4px; height: 140px; padding: 10px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); }
 .bars .bar { flex: 1; background: var(--primary); border-radius: 4px 4px 0 0; min-height: 2px; }
+
+.lightbox { position: fixed; inset: 0; z-index: 300; background: rgba(0,0,0,0.9); display: flex; align-items: center; justify-content: center; padding: 20px; }
+.lightbox img { max-width: 100%; max-height: 100%; border-radius: 8px; }
 
 .toast { position: fixed; bottom: calc(var(--nav-h) + 20px); inset-inline: 0; display: flex; justify-content: center; z-index: 200; pointer-events: none; }
 .toast .msg { background: var(--surface-2); border: 1px solid var(--border); padding: 12px 20px; border-radius: 999px; box-shadow: var(--shadow); font-weight: 600; }

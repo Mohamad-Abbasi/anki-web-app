@@ -4,6 +4,10 @@ import './index.css';
 import App from './App.jsx';
 import { ensureBuiltinModels } from './lib/database/models.js';
 
+// اعمال تم ذخیره‌شده (روشن/تاریک) پیش از رندر.
+const savedTheme = localStorage.getItem('theme');
+if (savedTheme) document.documentElement.dataset.theme = savedTheme;
+
 // مدل‌های پیش‌فرض (Basic/Cloze) را در اولین اجرا تضمین کن.
 ensureBuiltinModels();
 

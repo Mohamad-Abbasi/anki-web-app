@@ -2,6 +2,7 @@ import { NavLink, useLocation } from 'react-router-dom';
 
 const navItems = [
   { to: '/', label: 'دک‌ها', icon: IconDecks },
+  { to: '/search', label: 'جستجو', icon: IconSearch },
   { to: '/stats', label: 'آمار', icon: IconStats },
   { to: '/settings', label: 'تنظیمات', icon: IconSettings },
 ];
@@ -43,6 +44,13 @@ function IconDecks() {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <rect x="3" y="4" width="18" height="6" rx="2" /><rect x="3" y="14" width="18" height="6" rx="2" />
+    </svg>
+  );
+}
+function IconSearch() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="11" cy="11" r="7" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
     </svg>
   );
 }

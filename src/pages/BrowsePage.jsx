@@ -1,7 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import CardEditor from '../components/CardEditor.jsx';
-import { getNotesByDeck, deleteNote, getDeck } from '../lib/database/models.js';
+import { getNotesByDeck, deleteNote, getDeck, setNoteSuspended } from '../lib/database/models.js';
+import db from '../lib/database/db.js';
+import { Queue } from '../lib/scheduler/scheduler.js';
 
 function stripHtml(s) {
   return String(s || '').replace(/<[^>]*>/g, ' ').replace(/\{\{c\d+::(.*?)(::.*?)?\}\}/g, '$1').trim();
@@ -60,7 +62,18 @@ export default function BrowsePage() {
           </div>
           <button
             className="icon-btn"
-            onClick={async () => { if (confirm('این نوت حذف شود؟')) { await deleteNote(n.id); await load(); } }}
+            title="تعلیق/فعال‌سازی / Suspend toggle"
+            onClick={async () => {
+              const cards = await db.cards.where('noteId').equals(n.id).toArray();
+              const anyActive = cards.some((c) => c.queue !== Queue.Suspended);
+              await setNoteSuspended(n.id, anyActive);
+              await load();
+            }}
+          >⏸</button>
+          <button
+            className="icon-btn"
+            title="حذف / Delete"
+            onClick={async () => { if (confirm('این نوت حذف شود؟ / Delete this note?')) { await deleteNote(n.id); await load(); } }}
           >🗑</button>
         </div>
       ))}

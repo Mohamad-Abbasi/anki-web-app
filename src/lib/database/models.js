@@ -1,5 +1,6 @@
 import db from './db';
 import { State } from '../algorithms/fsrs';
+import { currentDaily } from '../day';
 
 // 0=new 1=learning 2=review 3=day-learning -1=suspended -2=buried (مثل Anki)
 export const Queue = {
@@ -215,12 +216,43 @@ export async function setCardQueue(id, queue) {
   return updateCard(id, { queue });
 }
 
+// انتقال یک نوت و همه‌ی کارت‌هایش به دک دیگر.
+export async function moveNote(noteId, newDeckId) {
+  noteId = Number(noteId);
+  newDeckId = Number(newDeckId);
+  await db.transaction('rw', db.notes, db.cards, async () => {
+    await db.notes.update(noteId, { deckId: newDeckId, modifiedAt: nowMs() });
+    const cards = await db.cards.where('noteId').equals(noteId).toArray();
+    for (const c of cards) await db.cards.update(c.id, { deckId: newDeckId });
+  });
+}
+
+// تعلیق/لغو تعلیق همه‌ی کارت‌های یک نوت.
+export async function setNoteSuspended(noteId, suspended) {
+  noteId = Number(noteId);
+  const cards = await db.cards.where('noteId').equals(noteId).toArray();
+  for (const c of cards) {
+    await updateCard(c.id, { queue: suspended ? Queue.Suspended : stateToQueue(c.state) });
+  }
+}
+
+function stateToQueue(state) {
+  if (state === State.New) return Queue.New;
+  if (state === State.Review) return Queue.Review;
+  return Queue.Learning;
+}
+
 // شمارش کارت‌های جدید/یادگیری/مرور برای داشبورد.
 export async function getDeckCounts(deckId) {
   const ts = nowMs();
   const cards = await db.cards.where('deckId').equals(Number(deckId)).toArray();
   const deck = await getDeck(deckId);
   const newLimit = deck?.config?.newPerDay ?? 20;
+  const reviewLimit = deck?.config?.reviewsPerDay ?? 200;
+  const daily = currentDaily(deck);
+  const newRemaining = Math.max(0, newLimit - daily.newDone);
+  const reviewRemaining = Math.max(0, reviewLimit - daily.revDone);
+
   let newCount = 0, learn = 0, review = 0;
   for (const c of cards) {
     if (c.queue === Queue.Suspended || c.queue === Queue.Buried) continue;
@@ -229,7 +261,12 @@ export async function getDeckCounts(deckId) {
       if ((c.due ?? 0) <= ts) learn++;
     } else if ((c.due ?? 0) <= ts) review++;
   }
-  return { new: Math.min(newCount, newLimit), learn, review, total: cards.length };
+  return {
+    new: Math.min(newCount, newRemaining),
+    learn,
+    review: Math.min(review, reviewRemaining),
+    total: cards.length,
+  };
 }
 
 /* ---------- REVLOG ---------- */

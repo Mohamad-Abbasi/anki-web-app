@@ -32,7 +32,7 @@ function convertModel(mid, m) {
  * @param {string} fallbackName نام پیش‌فرض دک اگر apkg نام معناداری نداشت
  * @returns {object} خلاصه‌ی import
  */
-export async function importParsedApkg(parsed, fallbackName = 'Imported Deck') {
+export async function importParsedApkg(parsed, fallbackName = 'Imported Deck', onProgress) {
   const { collection, notes, cards, mediaFiles } = parsed;
   await ensureBuiltinModels();
 
@@ -96,25 +96,47 @@ export async function importParsedApkg(parsed, fallbackName = 'Imported Deck') {
   const noteIdMap = new Map();
   notes.forEach((n, i) => noteIdMap.set(n.id, localNoteIds[i]));
 
-  // 4) کارت‌ها — زمان‌بندی را برای مطالعه‌ی فوری نرمال می‌کنیم.
+  // 4) کارت‌ها — زمان‌بندی اَنکی را به تاریخ/تایم‌استمپ واقعی ترجمه می‌کنیم.
+  // crt: زمان ایجاد کالکشن (ثانیه). due در کارت‌های مرور = شماره‌ی روز نسبت به crt.
+  const crtMs = (collection.crt || Math.floor(now / 1000)) * 1000;
+  const DAY = 86400000;
+
   const cardRows = cards.map((c) => {
     const state = ankiTypeToState(c.type);
     const interval = state === State.Review ? Math.max(1, c.interval || 1) : 0;
+    const ease = c.easeFactor ? c.easeFactor / 1000 : 2.5;
+
+    let due = now;
+    let pos;
+    if (state === State.New) {
+      due = now;
+      pos = c.due || 0; // حفظ ترتیب اصلی کارت‌های جدید
+    } else if (state === State.Review) {
+      // due بر حسب «روز از زمان ایجاد» → تاریخ مطلق
+      due = crtMs + (c.due || 0) * DAY;
+    } else {
+      // یادگیری/بازآموزی: due معمولاً تایم‌استمپ ثانیه‌ای است؛ اگر نامعتبر بود، اکنون.
+      const ms = (c.due || 0) * 1000;
+      due = ms > crtMs ? ms : now;
+    }
+
     return {
       noteId: noteIdMap.get(c.noteId),
       deckId: resolveDeck(c.deckId),
       ord: c.ord || 0,
       state,
       queue: c.queue < 0 ? c.queue : (state === State.Review ? Queue.Review : state === State.New ? Queue.New : Queue.Learning),
-      due: now,
+      due,
+      ...(pos != null ? { pos } : {}),
       interval,
-      easeFactor: c.easeFactor ? c.easeFactor / 1000 : 2.5,
+      easeFactor: ease,
+      // تخمین پایداری FSRS از روی فاصله‌ی فعلی تا پیشرفت قبلی حفظ شود.
       stability: state === State.Review ? Math.max(1, interval) : null,
       difficulty: state === State.Review ? 5 : null,
       learningStep: 0,
       reps: c.reps || 0,
       lapses: c.lapses || 0,
-      lastReview: null,
+      lastReview: state === State.Review ? due - interval * DAY : null,
       createdAt: now,
       modifiedAt: now,
     };
@@ -125,6 +147,7 @@ export async function importParsedApkg(parsed, fallbackName = 'Imported Deck') {
   const mediaRows = Object.entries(mediaFiles || {}).map(([name, blob]) => ({ name, blob }));
   for (let i = 0; i < mediaRows.length; i += 1000) {
     await db.media.bulkPut(mediaRows.slice(i, i + 1000));
+    onProgress?.({ phase: 'media', done: Math.min(i + 1000, mediaRows.length), total: mediaRows.length });
   }
 
   return {

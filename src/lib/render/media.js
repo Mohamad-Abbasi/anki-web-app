@@ -1,16 +1,40 @@
 // src/lib/render/media.js
-// تبدیل ارجاع‌های مدیا در HTML کارت به Object URL هایی که از IndexedDB می‌آیند.
+// تبدیل ارجاع‌های مدیا در HTML کارت به Object URL از IndexedDB.
+// کش به‌صورت LRU محدود است و آدرس‌های قدیمی revoke می‌شوند تا حافظه نشت نکند.
 import { getMedia } from '../database/models';
 
-const urlCache = new Map(); // filename → objectURL
+const MAX_CACHE = 150;
+const urlCache = new Map(); // filename → objectURL (ترتیب درج = LRU)
+
+function touch(key, url) {
+  urlCache.delete(key);
+  urlCache.set(key, url);
+  while (urlCache.size > MAX_CACHE) {
+    const oldest = urlCache.keys().next().value;
+    const u = urlCache.get(oldest);
+    urlCache.delete(oldest);
+    try { URL.revokeObjectURL(u); } catch { /* ignore */ }
+  }
+}
+
+export function clearMediaCache() {
+  for (const u of urlCache.values()) {
+    try { URL.revokeObjectURL(u); } catch { /* ignore */ }
+  }
+  urlCache.clear();
+}
 
 export async function mediaUrl(name) {
   const key = name.split('/').pop();
-  if (urlCache.has(key)) return urlCache.get(key);
+  if (urlCache.has(key)) {
+    const u = urlCache.get(key);
+    touch(key, u);
+    return u;
+  }
   const rec = await getMedia(key);
   if (!rec) return null;
   const url = URL.createObjectURL(rec.blob);
-  urlCache.set(key, url);
+  touch(key, url);
   return url;
 }
 
@@ -18,7 +42,7 @@ const SRC_RE = /(src|href)\s*=\s*["']([^"']+)["']/gi;
 const SOUND_RE = /\[sound:([^\]]+)\]/g;
 const EXTERNAL = /^(https?:|data:|blob:|#)/i;
 
-/** ارجاع‌های مدیای محلی را با blob URL جایگزین می‌کند و [sound:x] را به <audio> تبدیل می‌کند. */
+/** ارجاع‌های مدیای محلی را با blob URL جایگزین و [sound:x] را به <audio> تبدیل می‌کند. */
 export async function resolveMedia(html) {
   if (!html) return html;
   const names = new Set();
@@ -41,7 +65,7 @@ export async function resolveMedia(html) {
 
   let out = html.replace(SOUND_RE, (_, n) => {
     const u = map[n];
-    return u ? `<audio controls preload="none" src="${u}" style="max-width:100%"></audio>` : '';
+    return u ? `<audio controls preload="none" class="card-audio" src="${u}" style="max-width:100%"></audio>` : '';
   });
 
   out = out.replace(SRC_RE, (full, attr, v) => {

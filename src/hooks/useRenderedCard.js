@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { getNote, getModel } from '../lib/database/models.js';
 import { renderCard } from '../lib/render/template.js';
 import { resolveMedia } from '../lib/render/media.js';
+import { sanitizeHtml } from '../lib/render/sanitize.js';
 
 // یک کارت را به HTML آماده‌ی نمایش (سؤال/پاسخ) با مدیای حل‌شده تبدیل می‌کند.
 export function useRenderedCard(card) {
@@ -22,7 +23,11 @@ export function useRenderedCard(card) {
       }
       const model = await getModel(note.modelId);
       const { question, answer, css } = renderCard(note, model, card.ord || 0);
-      const [q, a] = await Promise.all([resolveMedia(question), resolveMedia(answer)]);
+      // اول پاک‌سازی (حذف اسکریپت/رویداد)، بعد جایگزینی مدیا با blob URL.
+      const [q, a] = await Promise.all([
+        resolveMedia(sanitizeHtml(question)),
+        resolveMedia(sanitizeHtml(answer)),
+      ]);
       if (alive) setContent({ question: q, answer: a, css, loading: false });
     })();
     return () => {

@@ -6,8 +6,10 @@ import { parseApkg } from './parser.js';
 import { importParsedApkg } from './importer.js';
 
 /** میان‌بر: یک فایل .apkg را پارس و مستقیماً وارد دیتابیس می‌کند. */
-export async function importApkgFile(file) {
+export async function importApkgFile(file, onProgress) {
+  onProgress?.({ phase: 'parse' });
   const parsed = await parseApkg(file);
-  const fallback = (file.name || 'Imported Deck').replace(/\.apkg$/i, '');
-  return importParsedApkg(parsed, fallback);
+  onProgress?.({ phase: 'save' });
+  const fallback = (file.name || 'Imported Deck').replace(/\.(apkg|colpkg|zip)$/i, '');
+  return importParsedApkg(parsed, fallback, onProgress);
 }

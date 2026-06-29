@@ -3,6 +3,7 @@ import Layout from './components/Layout.jsx';
 import HomePage from './pages/HomePage.jsx';
 import StudyPage from './pages/StudyPage.jsx';
 import BrowsePage from './pages/BrowsePage.jsx';
+import SearchPage from './pages/SearchPage.jsx';
 import StatsPage from './pages/StatsPage.jsx';
 import SettingsPage from './pages/SettingsPage.jsx';
 
@@ -16,6 +17,7 @@ export default function App() {
           <Route path="/" element={<HomePage />} />
           <Route path="/study/:deckId" element={<StudyPage />} />
           <Route path="/browse/:deckId" element={<BrowsePage />} />
+          <Route path="/search" element={<SearchPage />} />
           <Route path="/stats" element={<StatsPage />} />
           <Route path="/settings" element={<SettingsPage />} />
         </Routes>

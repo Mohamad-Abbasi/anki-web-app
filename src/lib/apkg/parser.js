@@ -1,4 +1,4 @@
-import { unzipSync, strFromU8 } from 'fflate';
+import { unzip, strFromU8 } from 'fflate';
 import initSqlJs from 'sql.js';
 import sqlWasmUrl from 'sql.js/dist/sql-wasm.wasm?url';
 
@@ -48,7 +48,10 @@ function mimeFor(filename) {
 export async function parseApkg(file) {
   const SQLlib = await getSQL();
   const arrayBuffer = await file.arrayBuffer();
-  const unzipped = unzipSync(new Uint8Array(arrayBuffer));
+  // unzip ناهمگام (در صورت امکان روی worker) تا رابط کاربری قفل نشود.
+  const unzipped = await new Promise((resolve, reject) => {
+    unzip(new Uint8Array(arrayBuffer), (err, data) => (err ? reject(err) : resolve(data)));
+  });
 
   // طرح‌واره‌ی جدیدتر anki21 ترجیح داده می‌شود.
   const colBytes = unzipped['collection.anki21'] || unzipped['collection.anki2'];
@@ -88,6 +91,14 @@ export async function parseApkg(file) {
     } catch {
       collection = { decks: {}, models: {}, config: {}, css: '' };
     }
+  }
+
+  // زمان ایجاد کالکشن (ثانیه) — مبنای تبدیل سررسید روزشمار به تاریخ واقعی.
+  try {
+    const crtRow = sdb.exec('SELECT crt FROM col LIMIT 1')[0];
+    collection.crt = Number(crtRow?.values?.[0]?.[0]) || 0;
+  } catch {
+    collection.crt = 0;
   }
 
   const notesRes = sdb.exec('SELECT id, guid, mid, mod, flds, tags FROM notes')[0];

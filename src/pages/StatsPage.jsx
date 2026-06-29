@@ -32,13 +32,27 @@ export default function StatsPage() {
         days.push(revlog.filter((r) => r.reviewedAt >= start && r.reviewedAt < end).length);
       }
 
+      // پیش‌بینی سررسید ۱۴ روز آینده (کارت‌های مرور).
+      const forecast = [];
+      for (let i = 0; i < 14; i++) {
+        const start = todayStart + i * DAY;
+        const end = start + DAY;
+        const count = cards.filter((c) => {
+          if (c.state !== State.Review) return false;
+          const due = c.due ?? 0;
+          return i === 0 ? due < end : due >= start && due < end;
+        }).length;
+        forecast.push(count);
+      }
+
       void now;
-      setData({ total: cards.length, mature, young, learning, newCount, todayCount: todayReviews.length, retention, days });
+      setData({ total: cards.length, mature, young, learning, newCount, todayCount: todayReviews.length, retention, days, forecast });
     })();
   }, []);
 
   if (!data) return <div className="spinner" />;
   const max = Math.max(1, ...data.days);
+  const fmax = Math.max(1, ...data.forecast);
 
   return (
     <div>
@@ -56,6 +70,15 @@ export default function StatsPage() {
         <div className="bars">
           {data.days.map((v, i) => (
             <div key={i} className="bar" style={{ height: `${(v / max) * 100}%` }} title={`${v} مرور`} />
+          ))}
+        </div>
+      </div>
+
+      <div className="card-box">
+        <h3 style={{ marginBottom: 12 }}>پیش‌بینی سررسید — ۱۴ روز آینده / Forecast</h3>
+        <div className="bars">
+          {data.forecast.map((v, i) => (
+            <div key={i} className="bar" style={{ height: `${(v / fmax) * 100}%`, background: 'var(--hard)' }} title={`${v} کارت`} />
           ))}
         </div>
       </div>

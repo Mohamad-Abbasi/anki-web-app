@@ -2,7 +2,23 @@ import { zipSync, strToU8 } from 'fflate';
 import initSqlJs from 'sql.js';
 import sqlWasmUrl from 'sql.js/dist/sql-wasm.wasm?url';
 import db from '../database/db';
-import { getDeck, getModel } from '../database/models';
+import { getDeck, getModel, getMedia } from '../database/models';
+
+// نام فایل‌های مدیای ارجاع‌شده در فیلدهای نوت‌ها را جمع می‌کند.
+function collectMediaNames(notes) {
+  const names = new Set();
+  const srcRe = /(?:src|href)\s*=\s*["']([^"']+)["']/gi;
+  const soundRe = /\[sound:([^\]]+)\]/g;
+  for (const n of notes) {
+    const text = (n.fields || []).join(' ');
+    let m;
+    while ((m = srcRe.exec(text))) {
+      if (!/^(https?:|data:|blob:)/i.test(m[1])) names.add(decodeURIComponent(m[1]).split('/').pop());
+    }
+    while ((m = soundRe.exec(text))) names.add(m[1].split('/').pop());
+  }
+  return [...names];
+}
 
 let SQL = null;
 async function getSQL() {
@@ -122,10 +138,20 @@ export async function exportToApkg(deckId) {
   const bytes = sdb.export();
   sdb.close();
 
-  // مدیا (در این نسخه بدون مدیا برای سادگی؛ نگاشت خالی).
-  const zipped = zipSync({
-    'collection.anki2': new Uint8Array(bytes),
-    media: strToU8('{}'),
-  });
+  // جمع‌آوری مدیای ارجاع‌شده و ساخت نگاشت شماره‌دار (فرمت apkg).
+  const zipContent = { 'collection.anki2': new Uint8Array(bytes) };
+  const mediaMap = {};
+  let idx = 0;
+  for (const name of collectMediaNames(notes)) {
+    const rec = await getMedia(name);
+    if (rec?.blob) {
+      zipContent[String(idx)] = new Uint8Array(await rec.blob.arrayBuffer());
+      mediaMap[String(idx)] = name;
+      idx++;
+    }
+  }
+  zipContent.media = strToU8(JSON.stringify(mediaMap));
+
+  const zipped = zipSync(zipContent, { level: 0 });
   return new Blob([zipped], { type: 'application/octet-stream' });
 }
