@@ -3,7 +3,14 @@
     "allow": [
       "Bash(npm install *)",
       "Bash(npm run *)",
-      "mcp__Claude_Preview__preview_start"
+      "mcp__Claude_Preview__preview_start",
+      "Bash(rm -rf node_modules)",
+      "Bash(npm ci *)",
+      "Bash(gh --version)",
+      "Bash(gh auth *)",
+      "Bash(npm --version)",
+      "Bash(rm -f package-lock.json)",
+      "Bash(git worktree *)"
     ]
   }
 }
