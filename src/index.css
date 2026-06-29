@@ -141,6 +141,7 @@ input:focus, textarea:focus, select:focus {
 .card-box { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px; margin-bottom: 14px; box-shadow: var(--shadow); }
 .field { margin-bottom: 14px; }
 .field label { display: block; font-size: 0.85rem; color: var(--muted); margin-bottom: 6px; font-weight: 600; }
+.lbl-hint { color: var(--muted); font-weight: 400; font-size: 0.78rem; }
 .row { display: flex; gap: 10px; }
 
 /* ---------- Study view ---------- */
