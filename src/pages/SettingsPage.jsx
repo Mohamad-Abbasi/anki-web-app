@@ -1,13 +1,16 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useDecks } from '../hooks/useDecks.js';
 import { exportToApkg } from '../lib/apkg/index.js';
+import { exportBackup, importBackup } from '../lib/backup.js';
 import db from '../lib/database/db.js';
 
 export default function SettingsPage() {
-  const { decks, updateDeck, loading } = useDecks();
+  const { decks, updateDeck, loading, refresh } = useDecks();
   const [selectedId, setSelectedId] = useState(null);
   const [form, setForm] = useState(null);
   const [toast, setToast] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const backupInputRef = useRef(null);
 
   useEffect(() => {
     if (decks.length && selectedId == null) setSelectedId(decks[0].id);
@@ -55,6 +58,42 @@ export default function SettingsPage() {
       URL.revokeObjectURL(url);
     } catch (e) {
       flash('خطا در خروجی: ' + e.message);
+    }
+  };
+
+  const handleBackup = async () => {
+    setBusy(true);
+    try {
+      const blob = await exportBackup();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      const d = new Date().toISOString().slice(0, 10);
+      a.href = url;
+      a.download = `ankiweb-backup-${d}.zip`;
+      a.click();
+      URL.revokeObjectURL(url);
+      flash('پشتیبان ساخته شد / Backup downloaded');
+    } catch (e) {
+      flash('خطا / Error: ' + e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleRestore = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    if (!confirm('بازیابی همه‌ی داده‌های فعلی را جایگزین می‌کند. ادامه؟ / Restore replaces all current data. Continue?')) return;
+    setBusy(true);
+    try {
+      const res = await importBackup(file);
+      await refresh();
+      flash(`بازیابی شد / Restored: ${res.cards} کارت`);
+    } catch (err) {
+      flash('خطا / Error: ' + err.message);
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -127,6 +166,20 @@ export default function SettingsPage() {
           </div>
         </>
       )}
+
+      <div className="card-box">
+        <h3 style={{ marginBottom: 14 }}>پشتیبان‌گیری / Backup</h3>
+        <p style={{ color: 'var(--muted)', fontSize: '0.85rem', marginBottom: 12 }}>
+          از همه‌ی دک‌ها، کارت‌ها، سوابق مرور و مدیا یک فایل پشتیبان بساز و جای امنی نگه دار.
+          با «بازیابی» می‌توانی روی هر مرورگر/دستگاهی همه‌چیز را برگردانی.
+          <br />Back up everything to one file; restore it on any browser or device.
+        </p>
+        <div className="row">
+          <button className="btn primary" onClick={handleBackup} disabled={busy}>⬇ ساخت پشتیبان / Export</button>
+          <button className="btn" onClick={() => backupInputRef.current?.click()} disabled={busy}>⬆ بازیابی / Restore</button>
+        </div>
+        <input ref={backupInputRef} type="file" accept=".zip" onChange={handleRestore} style={{ display: 'none' }} />
+      </div>
 
       <div className="card-box">
         <h3 style={{ marginBottom: 14, color: 'var(--again)' }}>ناحیه‌ی خطر</h3>

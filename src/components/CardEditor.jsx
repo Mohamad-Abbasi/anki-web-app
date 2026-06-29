@@ -56,7 +56,7 @@ export default function CardEditor({ deckId, note, onClose }) {
       await saveMedia(name, file);
       insertIntoActive(kind === 'image' ? `<img src="${name}">` : `[sound:${name}]`);
     } catch (err) {
-      setError('آپلود ناموفق بود: ' + err.message);
+      setError('آپلود ناموفق بود / Upload failed: ' + err.message);
     }
   }, [insertIntoActive]);
 
@@ -130,17 +130,19 @@ export default function CardEditor({ deckId, note, onClose }) {
         <input ref={audioInputRef} type="file" accept="audio/*" onChange={(e) => handleUpload(e, 'audio')} style={{ display: 'none' }} />
 
         <p className="lbl-hint" style={{ display: 'block', marginBottom: 12 }}>
-          می‌توانی HTML ساده مثل {'<b>پررنگ</b>'} هم بنویسی. رسانه در فیلدی که آخرین‌بار کلیک کردی درج می‌شود.
+          می‌توانی HTML ساده مثل {'<b>پررنگ</b>'} هم بنویسی. رسانه در فیلدی که آخرین‌بار کلیک کردی درج می‌شود.<br />
+          You can use simple HTML; media is inserted into the last focused field.
         </p>
 
         {model?.type === 1 && (
           <p className="lbl-hint" style={{ display: 'block', marginBottom: 12 }}>
-            Cloze: برای هر جای‌خالی از {'{{c1::پاسخ}}'} یا با راهنما {'{{c1::پاسخ::راهنما}}'} استفاده کن. شماره‌های متفاوت = کارت‌های جدا.
+            Cloze: برای هر جای‌خالی از {'{{c1::پاسخ}}'} یا با راهنما {'{{c1::پاسخ::راهنما}}'} استفاده کن. شماره‌های متفاوت = کارت‌های جدا.<br />
+            Use {'{{c1::answer}}'} or {'{{c1::answer::hint}}'}; different numbers create separate cards.
           </p>
         )}
 
         <div className="field">
-          <label>برچسب‌ها / Tags (با فاصله)</label>
+          <label>برچسب‌ها / Tags <span className="lbl-hint">(با فاصله / space-separated)</span></label>
           <input value={tags} onChange={(e) => setTags(e.target.value)} dir="auto" />
         </div>
 
