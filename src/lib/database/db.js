@@ -33,4 +33,15 @@ db.version(2)
     // نصب‌های قدیمی داده‌ی واقعی نداشتند؛ نیازی به مهاجرت داده نیست.
   });
 
+// نسخه‌ی ۳: افزودن نمایه‌ی cloudId برای همگام‌سازی با Supabase.
+db.version(3).stores({
+  decks: '++id, name, parentId, modifiedAt, cloudId',
+  notes: '++id, deckId, modelId, modifiedAt, *tags, cloudId',
+  cards: '++id, noteId, deckId, due, state, queue, cloudId',
+  models: '&mid, name',
+  revlog: '++id, cardId, reviewedAt',
+  media: '&name',
+  config: '&key',
+});
+
 export default db;
