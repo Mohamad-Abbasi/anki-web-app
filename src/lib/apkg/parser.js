@@ -63,11 +63,9 @@ export async function parseApkg(file) {
 
   const sdb = new SQLlib.Database(new Uint8Array(colBytes));
 
-  const colRow = sdb.exec('SELECT data, decks, models, conf, tags FROM col LIMIT 1')[0]
-    || sdb.exec('SELECT * FROM col LIMIT 1')[0];
-
-  // طرح‌واره‌ی قدیمی ستون‌های جدا (decks/models/conf) دارد؛ جدیدتر همه را در data دارد.
-  let collection;
+  // طرح‌واره‌ی رایج Anki ستون‌های جدا (decks/models/conf) دارد؛
+  // طرح‌واره‌ی جدیدتر همه‌چیز را در یک ستون JSON به نام data نگه می‌دارد.
+  let collection = null;
   try {
     const cols = sdb.exec('SELECT decks, models, conf FROM col LIMIT 1')[0];
     if (cols) {
@@ -84,10 +82,13 @@ export async function parseApkg(file) {
   }
 
   if (!collection) {
-    const dataRow = sdb.exec('SELECT data FROM col LIMIT 1')[0];
-    collection = parseCollectionData(dataRow?.values?.[0]?.[0]);
+    try {
+      const dataRow = sdb.exec('SELECT data FROM col LIMIT 1')[0];
+      collection = parseCollectionData(dataRow?.values?.[0]?.[0]);
+    } catch {
+      collection = { decks: {}, models: {}, config: {}, css: '' };
+    }
   }
-  void colRow;
 
   const notesRes = sdb.exec('SELECT id, guid, mid, mod, flds, tags FROM notes')[0];
   const notes = (notesRes?.values || []).map((row) => ({

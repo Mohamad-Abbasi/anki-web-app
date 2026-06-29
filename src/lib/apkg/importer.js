@@ -1,6 +1,6 @@
 import db from '../database/db';
 import { State } from '../algorithms/fsrs';
-import { Queue, saveMedia, ensureBuiltinModels } from '../database/models';
+import { Queue, ensureBuiltinModels } from '../database/models';
 
 // نگاشت type کارت Anki به state داخلی ما.
 function ankiTypeToState(type) {
@@ -80,58 +80,57 @@ export async function importParsedApkg(parsed, fallbackName = 'Imported Deck') {
   const noteDeck = new Map();
   for (const c of cards) if (!noteDeck.has(c.noteId)) noteDeck.set(c.noteId, c.deckId);
 
+  // نوشتن دسته‌ای (bulk) برای مقیاس‌پذیری با هزاران نوت/کارت/مدیا.
+  const noteRows = notes.map((n) => ({
+    deckId: resolveDeck(noteDeck.get(n.id)),
+    modelId: String(n.mid),
+    fields: n.fields,
+    tags: n.tags || [],
+    guid: n.guid,
+    createdAt: now,
+    modifiedAt: now,
+  }));
+  const localNoteIds = await db.notes.bulkAdd(noteRows, { allKeys: true });
+
+  // نگاشت nid اَنکی → id محلی بر اساس ترتیب درج.
   const noteIdMap = new Map();
-  await db.transaction('rw', db.notes, db.cards, async () => {
-    for (const n of notes) {
-      const localDeck = resolveDeck(noteDeck.get(n.id));
-      const localId = await db.notes.add({
-        deckId: localDeck,
-        modelId: String(n.mid),
-        fields: n.fields,
-        tags: n.tags || [],
-        guid: n.guid,
-        createdAt: now,
-        modifiedAt: now,
-      });
-      noteIdMap.set(n.id, localId);
-    }
+  notes.forEach((n, i) => noteIdMap.set(n.id, localNoteIds[i]));
 
-    // 4) کارت‌ها — زمان‌بندی را برای مطالعه‌ی فوری نرمال می‌کنیم.
-    for (const c of cards) {
-      const state = ankiTypeToState(c.type);
-      const interval = state === State.Review ? Math.max(1, c.interval || 1) : 0;
-      await db.cards.add({
-        noteId: noteIdMap.get(c.noteId),
-        deckId: resolveDeck(c.deckId),
-        ord: c.ord || 0,
-        state,
-        queue: c.queue < 0 ? c.queue : (state === State.Review ? Queue.Review : state === State.New ? Queue.New : Queue.Learning),
-        due: now, // برای دسترس‌پذیری فوری
-        interval,
-        easeFactor: c.easeFactor ? c.easeFactor / 1000 : 2.5,
-        stability: state === State.Review ? Math.max(1, interval) : null,
-        difficulty: state === State.Review ? 5 : null,
-        learningStep: 0,
-        reps: c.reps || 0,
-        lapses: c.lapses || 0,
-        lastReview: null,
-        createdAt: now,
-        modifiedAt: now,
-      });
-    }
+  // 4) کارت‌ها — زمان‌بندی را برای مطالعه‌ی فوری نرمال می‌کنیم.
+  const cardRows = cards.map((c) => {
+    const state = ankiTypeToState(c.type);
+    const interval = state === State.Review ? Math.max(1, c.interval || 1) : 0;
+    return {
+      noteId: noteIdMap.get(c.noteId),
+      deckId: resolveDeck(c.deckId),
+      ord: c.ord || 0,
+      state,
+      queue: c.queue < 0 ? c.queue : (state === State.Review ? Queue.Review : state === State.New ? Queue.New : Queue.Learning),
+      due: now,
+      interval,
+      easeFactor: c.easeFactor ? c.easeFactor / 1000 : 2.5,
+      stability: state === State.Review ? Math.max(1, interval) : null,
+      difficulty: state === State.Review ? 5 : null,
+      learningStep: 0,
+      reps: c.reps || 0,
+      lapses: c.lapses || 0,
+      lastReview: null,
+      createdAt: now,
+      modifiedAt: now,
+    };
   });
+  await db.cards.bulkAdd(cardRows);
 
-  // 5) مدیا
-  let mediaCount = 0;
-  for (const [name, blob] of Object.entries(mediaFiles || {})) {
-    await saveMedia(name, blob);
-    mediaCount++;
+  // 5) مدیا — در دسته‌های ۱۰۰۰تایی تا حافظه و تراکنش‌ها سبک بمانند.
+  const mediaRows = Object.entries(mediaFiles || {}).map(([name, blob]) => ({ name, blob }));
+  for (let i = 0; i < mediaRows.length; i += 1000) {
+    await db.media.bulkPut(mediaRows.slice(i, i + 1000));
   }
 
   return {
     deckCount: deckIdMap.size,
     noteCount: noteIdMap.size,
     cardCount: cards.length,
-    mediaCount,
+    mediaCount: mediaRows.length,
   };
 }

@@ -12,6 +12,10 @@ dist
 dist-ssr
 *.local
 
+# Test/import deck files (not part of the app)
+*.apkg
+*.colpkg
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
