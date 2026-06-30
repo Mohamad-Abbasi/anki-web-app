@@ -8,8 +8,10 @@ import StatsPage from './pages/StatsPage.jsx';
 import SettingsPage from './pages/SettingsPage.jsx';
 import AdminPage from './pages/AdminPage.jsx';
 import LoginPage from './pages/LoginPage.jsx';
+import { useState, useEffect } from 'react';
 import { AuthProvider, useAuth } from './auth/AuthContext.jsx';
 import { cloudEnabled } from './lib/supabase/client.js';
+import { pullShared, pullProgress } from './lib/supabase/sync.js';
 
 function AppRoutes() {
   return (
@@ -44,12 +46,38 @@ function ConfigNeeded() {
   );
 }
 
+function SyncGate() {
+  const { user } = useAuth();
+  const [ready, setReady] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try { await pullShared(); await pullProgress(user.id); }
+      catch (e) { console.error('sync error:', e); }
+      if (alive) setReady(true);
+    })();
+    return () => { alive = false; };
+  }, [user.id]);
+
+  if (!ready) {
+    return (
+      <div className="auth-screen">
+        <div className="auth-card card-box" style={{ textAlign: 'center' }}>
+          <div className="spinner" />
+          <p style={{ color: 'var(--muted)' }}>در حال همگام‌سازی... / Syncing...</p>
+        </div>
+      </div>
+    );
+  }
+  return <AppRoutes />;
+}
+
 function Gate() {
   const { loading, session } = useAuth();
   if (!cloudEnabled) return <ConfigNeeded />;
   if (loading) return <div className="spinner" />;
   if (!session) return <LoginPage />;
-  return <AppRoutes />;
+  return <SyncGate />;
 }
 
 export default function App() {

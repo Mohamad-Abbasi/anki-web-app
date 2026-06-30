@@ -1,7 +1,9 @@
 import { useState, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useDecks } from '../hooks/useDecks.js';
-import { renameDeck } from '../lib/database/models.js';
+import { renameDeck, getDecks } from '../lib/database/models.js';
+import { cloudEnabled } from '../lib/supabase/client.js';
+import { pushDeckTree, getSyncUser } from '../lib/supabase/sync.js';
 
 export default function DeckList() {
   const { decks, counts, loading, addNewDeck, removeDeck, refresh } = useDecks();
@@ -46,6 +48,20 @@ export default function DeckList() {
       });
       await refresh();
       flash(`وارد شد / Imported: ${res.cardCount} کارت، ${res.mediaCount} مدیا`);
+
+      // آپلود به کتابخانه‌ی مشترک (در صورت فعال‌بودن ابر).
+      if (cloudEnabled) {
+        const all = await getDecks();
+        const userId = getSyncUser();
+        for (const d of all.filter((x) => !x.cloudId)) {
+          setProgress(`آپلود به ابر / Uploading: ${d.name}`);
+          try {
+            await pushDeckTree(d.id, userId, (p) => {
+              if (p.phase === 'media') setProgress(`آپلود مدیا / Uploading media: ${p.done}/${p.total}`);
+            });
+          } catch (e) { console.error('push failed:', e); }
+        }
+      }
     } catch (err) {
       flash(`خطا در ورود / Import error: ${err.message}`);
     } finally {

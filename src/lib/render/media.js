@@ -2,6 +2,13 @@
 // تبدیل ارجاع‌های مدیا در HTML کارت به Object URL از IndexedDB.
 // کش به‌صورت LRU محدود است و آدرس‌های قدیمی revoke می‌شوند تا حافظه نشت نکند.
 import { getMedia } from '../database/models';
+import { SUPABASE_URL, cloudEnabled } from '../supabase/config';
+
+// آدرس عمومی مدیا در Storage (برای دک‌های مشترکی که مدیایشان محلی نیست).
+function publicMediaUrl(name) {
+  if (!cloudEnabled) return null;
+  return `${SUPABASE_URL}/storage/v1/object/public/media/${encodeURIComponent(name)}`;
+}
 
 const MAX_CACHE = 150;
 const urlCache = new Map(); // filename → objectURL (ترتیب درج = LRU)
@@ -58,7 +65,7 @@ export async function resolveMedia(html) {
   const map = {};
   await Promise.all(
     [...names].map(async (n) => {
-      const u = await mediaUrl(n);
+      const u = (await mediaUrl(n)) || publicMediaUrl(n.split('/').pop());
       if (u) map[n] = u;
     }),
   );

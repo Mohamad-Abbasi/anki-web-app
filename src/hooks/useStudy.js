@@ -3,6 +3,8 @@ import { buildStudyQueue, answerCard, previewIntervals } from '../lib/scheduler/
 import { State } from '../lib/algorithms/fsrs.js';
 import { updateCard, updateDeck } from '../lib/database/models.js';
 import db from '../lib/database/db.js';
+import { cloudEnabled } from '../lib/supabase/client.js';
+import { pushProgress, getSyncUser } from '../lib/supabase/sync.js';
 
 // کارت بعدی: ابتدا کارت‌های سررسیده (با کمترین due)، وگرنه نزدیک‌ترین کارت آینده.
 function pickNext(pool, now) {
@@ -63,6 +65,11 @@ export function useStudy(deckId) {
     const snapshot = { ...card };
 
     const updated = await answerCard(card, rating, d);
+
+    // ارسال پیشرفت شخصی به ابر (best-effort).
+    if (cloudEnabled && updated.cloudId) {
+      pushProgress(getSyncUser(), updated).catch(() => {});
+    }
 
     undoRef.current = { snapshot, dailyBefore, rating };
     setCanUndo(true);

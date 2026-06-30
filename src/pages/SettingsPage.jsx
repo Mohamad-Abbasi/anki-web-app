@@ -1,10 +1,12 @@
 import { useState, useEffect, useRef } from 'react';
 import { useDecks } from '../hooks/useDecks.js';
+import { useAuth } from '../auth/AuthContext.jsx';
 import { exportBackup, importBackup } from '../lib/backup.js';
 import db from '../lib/database/db.js';
 
 export default function SettingsPage() {
   const { decks, updateDeck, loading, refresh } = useDecks();
+  const { user, profile, signOut, cloudEnabled } = useAuth();
   const [selectedId, setSelectedId] = useState(null);
   const [form, setForm] = useState(null);
   const [toast, setToast] = useState(null);
@@ -117,7 +119,17 @@ export default function SettingsPage() {
 
   return (
     <div>
-      <h2 style={{ marginBottom: 16 }}>تنظیمات</h2>
+      <h2 style={{ marginBottom: 16 }}>تنظیمات / Settings</h2>
+
+      {cloudEnabled && user && (
+        <div className="card-box">
+          <h3 style={{ marginBottom: 8 }}>حساب / Account</h3>
+          <p style={{ color: 'var(--muted)', fontSize: '0.9rem', marginBottom: 12 }}>
+            {user.email} {profile?.role === 'admin' && <span className="pill review">admin</span>}
+          </p>
+          <button className="btn danger block" onClick={() => signOut()}>خروج / Sign out</button>
+        </div>
+      )}
 
       {decks.length === 0 ? (
         <p className="empty">ابتدا یک دک بساز.</p>

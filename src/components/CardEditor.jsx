@@ -3,6 +3,8 @@ import {
   createNote, updateNote, getModel, getModels, saveMedia,
   getDecks, moveNote,
 } from '../lib/database/models.js';
+import { cloudEnabled } from '../lib/supabase/client.js';
+import { pushDeckTree, getSyncUser } from '../lib/supabase/sync.js';
 
 // توضیح فارسی برای نام فیلدهای استاندارد (انگلیسی هم نگه داشته می‌شود).
 const FIELD_HINTS = {
@@ -90,6 +92,10 @@ export default function CardEditor({ deckId, note, onClose }) {
         if (Number(targetDeck) !== Number(note.deckId)) await moveNote(note.id, targetDeck);
       } else {
         await createNote({ deckId, modelId, fields, tags: tagList });
+      }
+      // همگام‌سازی دک با ابر (best-effort).
+      if (cloudEnabled) {
+        pushDeckTree(Number(note?.id ? targetDeck : deckId), getSyncUser()).catch(() => {});
       }
       onClose(true);
     } catch (err) {
