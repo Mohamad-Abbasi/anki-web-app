@@ -10,8 +10,9 @@ import AdminPage from './pages/AdminPage.jsx';
 import LoginPage from './pages/LoginPage.jsx';
 import { useState, useEffect } from 'react';
 import { AuthProvider, useAuth } from './auth/AuthContext.jsx';
+import { SyncProvider } from './auth/SyncContext.jsx';
 import { cloudEnabled } from './lib/supabase/client.js';
-import { pullShared, pullProgress } from './lib/supabase/sync.js';
+import { pullShared, pullProgress, flushOutbox } from './lib/supabase/sync.js';
 
 function AppRoutes() {
   return (
@@ -52,8 +53,11 @@ function SyncGate() {
   useEffect(() => {
     let alive = true;
     (async () => {
-      try { await pullShared(); await pullProgress(user.id); }
-      catch (e) { console.error('sync error:', e); }
+      try {
+        await flushOutbox();              // ابتدا پیشرفت آفلاینِ معوق را بفرست
+        await pullShared();               // افزایشی (اولین بار کامل، چون lastPulledAt خالی است)
+        await pullProgress(user.id);
+      } catch (e) { console.error('sync error:', e); }
       if (alive) setReady(true);
     })();
     return () => { alive = false; };
@@ -69,7 +73,11 @@ function SyncGate() {
       </div>
     );
   }
-  return <AppRoutes />;
+  return (
+    <SyncProvider>
+      <AppRoutes />
+    </SyncProvider>
+  );
 }
 
 function Gate() {

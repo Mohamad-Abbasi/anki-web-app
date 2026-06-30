@@ -4,7 +4,7 @@ import { State } from '../lib/algorithms/fsrs.js';
 import { updateCard, updateDeck } from '../lib/database/models.js';
 import db from '../lib/database/db.js';
 import { cloudEnabled } from '../lib/supabase/client.js';
-import { pushProgress, getSyncUser } from '../lib/supabase/sync.js';
+import { enqueueProgress } from '../lib/supabase/sync.js';
 
 // کارت بعدی: ابتدا کارت‌های سررسیده (با کمترین due)، وگرنه نزدیک‌ترین کارت آینده.
 function pickNext(pool, now) {
@@ -66,9 +66,9 @@ export function useStudy(deckId) {
 
     const updated = await answerCard(card, rating, d);
 
-    // ارسال پیشرفت شخصی به ابر (best-effort).
+    // ثبت پیشرفت در صف آفلاین؛ هنگام آنلاین‌بودن خودکار به ابر می‌رود.
     if (cloudEnabled && updated.cloudId) {
-      pushProgress(getSyncUser(), updated).catch(() => {});
+      enqueueProgress(updated).catch(() => {});
     }
 
     undoRef.current = { snapshot, dailyBefore, rating };

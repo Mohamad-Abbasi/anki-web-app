@@ -1,5 +1,13 @@
 import { NavLink, useLocation } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext.jsx';
+import { useSync } from '../auth/SyncContext.jsx';
+
+const SYNC_LABEL = {
+  synced: { t: 'همگام', cls: 'ok', icon: '●' },
+  syncing: { t: 'در حال…', cls: 'busy', icon: '◐' },
+  offline: { t: 'آفلاین', cls: 'off', icon: '○' },
+  error: { t: 'خطا', cls: 'err', icon: '✕' },
+};
 
 const baseNav = [
   { to: '/', label: 'دک‌ها', icon: IconDecks },
@@ -11,6 +19,8 @@ const baseNav = [
 export default function Layout({ children }) {
   const location = useLocation();
   const { isAdmin } = useAuth();
+  const { status, pending, sync } = useSync();
+  const s = SYNC_LABEL[status] || SYNC_LABEL.synced;
   const navItems = isAdmin ? [...baseNav, { to: '/admin', label: 'کاربران', icon: IconUsers }] : baseNav;
   // در صفحه‌ی مطالعه نوار پایین مخفی می‌شود تا فضای بیشتری باشد.
   const isStudy = location.pathname.startsWith('/study/');
@@ -25,6 +35,10 @@ export default function Layout({ children }) {
             <span className="byline">برنامه‌نویس: محمد عباسی</span>
           </div>
         </div>
+        <button className={`sync-chip ${s.cls}`} onClick={sync} title="همگام‌سازی / Sync now">
+          <span className="dot">{s.icon}</span>
+          <span>{s.t}{pending > 0 ? ` (${pending})` : ''}</span>
+        </button>
       </header>
 
       <main className="content">{children}</main>

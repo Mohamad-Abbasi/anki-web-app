@@ -109,6 +109,13 @@ input:focus, textarea:focus, select:focus {
 }
 .content { flex: 1; padding: 18px; }
 
+.sync-chip { display: inline-flex; align-items: center; gap: 6px; background: var(--surface); border: 1px solid var(--border); color: var(--muted); padding: 5px 10px; border-radius: 999px; font-size: 0.72rem; font-weight: 700; }
+.sync-chip .dot { font-size: 0.7rem; }
+.sync-chip.ok { color: var(--good); }
+.sync-chip.busy { color: var(--primary); }
+.sync-chip.off { color: var(--muted); }
+.sync-chip.err { color: var(--again); }
+
 /* ---------- Bottom nav (mobile-first) ---------- */
 .bottomnav {
   position: fixed; bottom: 0; inset-inline: 0; z-index: 30;

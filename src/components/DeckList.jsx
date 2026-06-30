@@ -3,10 +3,12 @@ import { useNavigate } from 'react-router-dom';
 import { useDecks } from '../hooks/useDecks.js';
 import { renameDeck, getDecks } from '../lib/database/models.js';
 import { cloudEnabled } from '../lib/supabase/client.js';
-import { pushDeckTree, getSyncUser } from '../lib/supabase/sync.js';
+import { pushDeckTree, getSyncUser, cloudDeleteDeck } from '../lib/supabase/sync.js';
+import { useAuth } from '../auth/AuthContext.jsx';
 
 export default function DeckList() {
   const { decks, counts, loading, addNewDeck, removeDeck, refresh } = useDecks();
+  const { isAdmin } = useAuth();
   const navigate = useNavigate();
   const [showNew, setShowNew] = useState(false);
   const [name, setName] = useState('');
@@ -136,13 +138,19 @@ export default function DeckList() {
                 if (name && name.trim()) { await renameDeck(deck.id, name.trim()); await refresh(); }
               }}
             >✏️</button>
-            <button
-              className="icon-btn"
-              title="حذف دک"
-              onClick={async () => {
-                if (confirm(`دک «${deck.name}» و همه‌ی کارت‌هایش حذف شود؟`)) await removeDeck(deck.id);
-              }}
-            >🗑</button>
+            {isAdmin && (
+              <button
+                className="icon-btn"
+                title="حذف دک / Delete (admin)"
+                onClick={async () => {
+                  if (!confirm(`دک «${deck.name}» و همه‌ی کارت‌هایش حذف شود؟ / Delete deck?`)) return;
+                  if (cloudEnabled && deck.cloudId) {
+                    try { await cloudDeleteDeck(deck.cloudId); } catch (e) { flash('خطای حذف ابری / Cloud delete error: ' + e.message); }
+                  }
+                  await removeDeck(deck.id);
+                }}
+              >🗑</button>
+            )}
             <button className="btn primary" onClick={() => navigate(`/study/${deck.id}`)} disabled={total === 0}>
               {total > 0 ? 'مطالعه' : 'تمام'}
             </button>

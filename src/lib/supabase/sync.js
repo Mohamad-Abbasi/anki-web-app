@@ -1,11 +1,13 @@
 // src/lib/supabase/sync.js
-// همگام‌سازی کتابخانه‌ی مشترک (decks/notes/cards/models/media) و پیشرفت شخصی.
+// همگام‌سازی کتابخانه‌ی مشترک + پیشرفت شخصی، با:
+// - کشیدن افزایشی (بر اساس updated_at)
+// - حذف نرم (deleted) و حذف محلی متناظر
+// - صف آفلاین (outbox) برای از‌دست‌نرفتن پیشرفت هنگام قطعی اینترنت
 import { supabase } from './client.js';
 import db from '../database/db.js';
-import { getModel, getMedia } from '../database/models.js';
+import { getModel, getMedia, getConfig, setConfig } from '../database/models.js';
 import { State } from '../algorithms/fsrs.js';
 
-// شناسه‌ی کاربر فعلی (توسط AuthContext تنظیم می‌شود) تا لایه‌های غیر-React هم بدانند.
 let _userId = null;
 export function setSyncUser(id) { _userId = id; }
 export function getSyncUser() { return _userId; }
@@ -20,27 +22,40 @@ const DEFAULT_CFG = {
   newPerDay: 20, reviewsPerDay: 200, requestRetention: 0.9, maxInterval: 36500,
   learningSteps: [1, 10], relearningSteps: [10], graduatingInterval: 1, easyInterval: 4,
 };
+const LAST_PULL_KEY = 'cloudLastPulledAt';
 
-// ---------- کشیدن کتابخانه‌ی مشترک به حافظه‌ی محلی ----------
-export async function pullShared() {
-  const [models, decks, notes, cards] = await Promise.all([
-    supabase.from('models').select('*'),
-    supabase.from('decks').select('*'),
-    supabase.from('notes').select('*'),
-    supabase.from('cards').select('*'),
-  ]);
+// ---------- کشیدن کتابخانه‌ی مشترک (افزایشی + حذف) ----------
+export async function pullShared({ full = false } = {}) {
+  const since = full ? null : await getConfig(LAST_PULL_KEY, null);
+  const sel = (table) => {
+    let q = supabase.from(table).select('*');
+    if (since) q = q.gt('updated_at', since);
+    return q;
+  };
+  const [models, decks, notes, cards] = await Promise.all([sel('models'), sel('decks'), sel('notes'), sel('cards')]);
   if (models.error) throw models.error;
 
+  const now = Date.now();
+  let maxUpdated = since || '1970-01-01T00:00:00Z';
+  const track = (rows) => { for (const r of rows || []) if (r.updated_at && r.updated_at > maxUpdated) maxUpdated = r.updated_at; };
+  track(models.data); track(decks.data); track(notes.data); track(cards.data);
+
+  // models
   for (const m of models.data || []) {
+    if (m.deleted) { await db.models.delete(m.mid); continue; }
     await db.models.put({ mid: m.mid, name: m.name, type: m.type, flds: m.flds, tmpls: m.tmpls, css: m.css });
   }
 
-  const now = Date.now();
   const localDecks = await db.decks.toArray();
   const deckByCloud = new Map(localDecks.filter((d) => d.cloudId).map((d) => [d.cloudId, d.id]));
   for (const d of decks.data || []) {
-    if (deckByCloud.has(d.id)) {
-      await db.decks.update(deckByCloud.get(d.id), { name: d.name, scheduler: d.scheduler, config: d.config || DEFAULT_CFG });
+    const localId = deckByCloud.get(d.id);
+    if (d.deleted) {
+      if (localId != null) await removeLocalDeck(localId);
+      continue;
+    }
+    if (localId != null) {
+      await db.decks.update(localId, { name: d.name, scheduler: d.scheduler, config: d.config || DEFAULT_CFG });
     } else {
       const id = await db.decks.add({ name: d.name, scheduler: d.scheduler || 'fsrs', config: d.config || { ...DEFAULT_CFG }, cloudId: d.id, createdAt: now, modifiedAt: now });
       deckByCloud.set(d.id, id);
@@ -50,9 +65,14 @@ export async function pullShared() {
   const localNotes = await db.notes.toArray();
   const noteByCloud = new Map(localNotes.filter((n) => n.cloudId).map((n) => [n.cloudId, n.id]));
   for (const n of notes.data || []) {
+    const localId = noteByCloud.get(n.id);
+    if (n.deleted) {
+      if (localId != null) { await db.cards.where('noteId').equals(localId).delete(); await db.notes.delete(localId); }
+      continue;
+    }
     const localDeck = deckByCloud.get(n.deck_id);
-    if (noteByCloud.has(n.id)) {
-      await db.notes.update(noteByCloud.get(n.id), { fields: n.fields, tags: n.tags || [], modelId: n.model_id, deckId: localDeck });
+    if (localId != null) {
+      await db.notes.update(localId, { fields: n.fields, tags: n.tags || [], modelId: n.model_id, deckId: localDeck });
     } else {
       const id = await db.notes.add({ deckId: localDeck, modelId: n.model_id, fields: n.fields, tags: n.tags || [], guid: n.guid, cloudId: n.id, createdAt: now, modifiedAt: now });
       noteByCloud.set(n.id, id);
@@ -62,7 +82,9 @@ export async function pullShared() {
   const localCards = await db.cards.toArray();
   const cardByCloud = new Map(localCards.filter((c) => c.cloudId).map((c) => [c.cloudId, c.id]));
   for (const c of cards.data || []) {
-    if (cardByCloud.has(c.id)) continue; // زمان‌بندی محلی/شخصی حفظ می‌شود
+    const localId = cardByCloud.get(c.id);
+    if (c.deleted) { if (localId != null) await db.cards.delete(localId); continue; }
+    if (localId != null) continue; // زمان‌بندی شخصی حفظ می‌شود
     const id = await db.cards.add({
       noteId: noteByCloud.get(c.note_id), deckId: deckByCloud.get(c.deck_id),
       ord: c.ord || 0, pos: c.pos || 0, cloudId: c.id,
@@ -73,7 +95,17 @@ export async function pullShared() {
     cardByCloud.set(c.id, id);
   }
 
+  await setConfig(LAST_PULL_KEY, maxUpdated);
   return { decks: (decks.data || []).length, notes: (notes.data || []).length, cards: (cards.data || []).length };
+}
+
+async function removeLocalDeck(localDeckId) {
+  await db.transaction('rw', db.decks, db.notes, db.cards, async () => {
+    const notes = await db.notes.where('deckId').equals(localDeckId).toArray();
+    await db.cards.where('deckId').equals(localDeckId).delete();
+    for (const n of notes) await db.notes.delete(n.id);
+    await db.decks.delete(localDeckId);
+  });
 }
 
 // ---------- پیشرفت شخصی ----------
@@ -95,19 +127,48 @@ export async function pullProgress(userId) {
   return (data || []).length;
 }
 
-export async function pushProgress(userId, card) {
-  if (!card?.cloudId || !userId) return;
-  await supabase.from('progress').upsert({
-    user_id: userId, card_id: card.cloudId, state: card.state,
-    due: Math.round(card.due || Date.now()), interval: card.interval || 0,
+// ---------- صف آفلاین برای پیشرفت ----------
+function progressPayload(card) {
+  return {
+    state: card.state, due: Math.round(card.due || Date.now()), interval: card.interval || 0,
     stability: card.stability, difficulty: card.difficulty, ease: card.easeFactor || 2.5,
     reps: card.reps || 0, lapses: card.lapses || 0, learning_step: card.learningStep || 0,
     last_review: card.lastReview ? Math.round(card.lastReview) : null,
-    updated_at: new Date().toISOString(),
-  });
+  };
 }
 
-// ---------- فرستادن یک دک محلی به کتابخانه‌ی مشترک ----------
+export async function enqueueProgress(card) {
+  if (!card?.cloudId) return;
+  await db.outbox.put({ cloudCardId: card.cloudId, payload: progressPayload(card), updatedAt: Date.now() });
+  flushOutbox().catch(() => {});
+}
+
+let _flushing = false;
+export async function flushOutbox() {
+  if (_flushing || !_userId) return { flushed: 0 };
+  _flushing = true;
+  let flushed = 0;
+  try {
+    const rows = await db.outbox.toArray();
+    for (const r of rows) {
+      const { error } = await supabase.from('progress').upsert({
+        user_id: _userId, card_id: r.cloudCardId, ...r.payload, updated_at: new Date().toISOString(),
+      });
+      if (error) break; // احتمالاً آفلاین — بعداً دوباره تلاش می‌کنیم
+      await db.outbox.delete(r.cloudCardId);
+      flushed++;
+    }
+  } finally {
+    _flushing = false;
+  }
+  return { flushed, remaining: await db.outbox.count() };
+}
+
+export async function pendingCount() {
+  return db.outbox.count();
+}
+
+// ---------- فرستادن دک محلی به ابر ----------
 async function batchInsertReturn(table, rows, size = 200) {
   const out = [];
   for (let i = 0; i < rows.length; i += size) {
@@ -133,14 +194,11 @@ export async function pushDeckTree(localDeckId, userId, onProgress) {
   }
 
   const notes = await db.notes.where('deckId').equals(localDeckId).toArray();
-
-  // مدل‌های مورد استفاده
   for (const mid of [...new Set(notes.map((n) => n.modelId))]) {
     const m = await getModel(mid);
     await supabase.from('models').upsert({ mid: String(mid), name: m.name, type: m.type, flds: m.flds, tmpls: m.tmpls, css: m.css, owner: userId });
   }
 
-  // نوت‌های بدون cloudId
   const newNotes = notes.filter((n) => !n.cloudId);
   if (newNotes.length) {
     const rows = newNotes.map((n) => ({ deck_id: cloudDeckId, model_id: String(n.modelId), fields: n.fields, tags: n.tags || [], guid: n.guid, owner: userId }));
@@ -149,7 +207,6 @@ export async function pushDeckTree(localDeckId, userId, onProgress) {
     onProgress?.({ phase: 'notes', done: newNotes.length });
   }
 
-  // نگاشت نوت محلی → cloud
   const allNotes = await db.notes.where('deckId').equals(localDeckId).toArray();
   const noteCloud = new Map(allNotes.map((n) => [n.id, n.cloudId]));
 
@@ -162,20 +219,45 @@ export async function pushDeckTree(localDeckId, userId, onProgress) {
     onProgress?.({ phase: 'cards', done: newCards.length });
   }
 
-  // مدیا → Storage (تخت، best-effort)
   const names = collectMediaNames(notes);
   let mediaDone = 0;
   for (const name of names) {
     const rec = await getMedia(name);
     if (rec?.blob) {
-      try {
-        await supabase.storage.from('media').upload(name, rec.blob, { upsert: true, contentType: rec.blob.type });
-      } catch { /* best-effort */ }
+      try { await supabase.storage.from('media').upload(name, rec.blob, { upsert: true, contentType: rec.blob.type }); }
+      catch { /* best-effort */ }
     }
     if (++mediaDone % 100 === 0) onProgress?.({ phase: 'media', done: mediaDone, total: names.length });
   }
-
   return { cloudDeckId, notes: newNotes.length, cards: newCards.length, media: names.length };
+}
+
+// آپلود همه‌ی دک‌های محلیِ هنوز‌آپلودنشده.
+export async function pushAllLocalDecks(userId, onProgress) {
+  const decks = await db.decks.toArray();
+  const pending = decks.filter((d) => !d.cloudId);
+  let i = 0;
+  for (const d of pending) {
+    onProgress?.({ deck: d.name, index: ++i, total: pending.length });
+    await pushDeckTree(d.id, userId, onProgress);
+  }
+  return { uploaded: pending.length };
+}
+
+// حذف نرمِ دک در ابر (فقط ادمین/صاحب).
+export async function cloudDeleteDeck(cloudDeckId) {
+  if (!cloudDeckId) return;
+  await supabase.from('cards').update({ deleted: true }).eq('deck_id', cloudDeckId);
+  await supabase.from('notes').update({ deleted: true }).eq('deck_id', cloudDeckId);
+  await supabase.from('decks').update({ deleted: true }).eq('id', cloudDeckId);
+}
+
+// همگام‌سازی کامل دستی.
+export async function syncNow(userId) {
+  await flushOutbox();
+  const pulled = await pullShared();
+  await pullProgress(userId);
+  return pulled;
 }
 
 function collectMediaNames(notes) {

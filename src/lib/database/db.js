@@ -44,4 +44,16 @@ db.version(3).stores({
   config: '&key',
 });
 
+// نسخه‌ی ۴: صف آفلاینِ ارسال به ابر (outbox) — برای از‌دست‌نرفتن پیشرفت آفلاین.
+db.version(4).stores({
+  decks: '++id, name, parentId, modifiedAt, cloudId',
+  notes: '++id, deckId, modelId, modifiedAt, *tags, cloudId',
+  cards: '++id, noteId, deckId, due, state, queue, cloudId',
+  models: '&mid, name',
+  revlog: '++id, cardId, reviewedAt',
+  media: '&name',
+  config: '&key',
+  outbox: '&cloudCardId, updatedAt', // یک ردیف به ازای هر کارت (آخرین وضعیت)
+});
+
 export default db;

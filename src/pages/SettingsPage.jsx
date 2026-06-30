@@ -1,12 +1,28 @@
 import { useState, useEffect, useRef } from 'react';
 import { useDecks } from '../hooks/useDecks.js';
 import { useAuth } from '../auth/AuthContext.jsx';
+import { useSync } from '../auth/SyncContext.jsx';
+import { pushAllLocalDecks } from '../lib/supabase/sync.js';
 import { exportBackup, importBackup } from '../lib/backup.js';
 import db from '../lib/database/db.js';
 
 export default function SettingsPage() {
   const { decks, updateDeck, loading, refresh } = useDecks();
   const { user, profile, signOut, cloudEnabled } = useAuth();
+  const { status, pending, sync } = useSync();
+
+  const uploadLocal = async () => {
+    setBusy(true);
+    try {
+      const res = await pushAllLocalDecks(user.id, (p) => p.deck && flash(`آپلود / Uploading: ${p.deck} (${p.index}/${p.total})`));
+      await sync();
+      flash(`آپلود شد / Uploaded: ${res.uploaded} دک`);
+    } catch (e) {
+      flash('خطا / Error: ' + e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
   const [selectedId, setSelectedId] = useState(null);
   const [form, setForm] = useState(null);
   const [toast, setToast] = useState(null);
@@ -123,10 +139,15 @@ export default function SettingsPage() {
 
       {cloudEnabled && user && (
         <div className="card-box">
-          <h3 style={{ marginBottom: 8 }}>حساب / Account</h3>
+          <h3 style={{ marginBottom: 8 }}>حساب و همگام‌سازی / Account & Sync</h3>
           <p style={{ color: 'var(--muted)', fontSize: '0.9rem', marginBottom: 12 }}>
             {user.email} {profile?.role === 'admin' && <span className="pill review">admin</span>}
+            <br />وضعیت / Status: <b>{status}</b>{pending > 0 ? ` — ${pending} مورد در صف` : ''}
           </p>
+          <div className="row" style={{ flexWrap: 'wrap', marginBottom: 10 }}>
+            <button className="btn primary" onClick={sync} disabled={busy}>↻ همگام‌سازی / Sync now</button>
+            <button className="btn" onClick={uploadLocal} disabled={busy}>⬆ آپلود دک‌های محلی / Upload local decks</button>
+          </div>
           <button className="btn danger block" onClick={() => signOut()}>خروج / Sign out</button>
         </div>
       )}
