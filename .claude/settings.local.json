@@ -12,7 +12,8 @@
       "Bash(rm -f package-lock.json)",
       "Bash(git worktree *)",
       "Bash(node _geticon.mjs)",
-      "Bash(xargs -I{} du -k \"{}\")"
+      "Bash(xargs -I{} du -k \"{}\")",
+      "Bash(curl -s \"https://api.github.com/repos/Mohamad-Abbasi/anki-web-app/actions/runs?per_page=3\")"
     ]
   }
 }
