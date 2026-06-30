@@ -11,7 +11,8 @@
       "Bash(npm --version)",
       "Bash(rm -f package-lock.json)",
       "Bash(git worktree *)",
-      "Bash(node _geticon.mjs)"
+      "Bash(node _geticon.mjs)",
+      "Bash(xargs -I{} du -k \"{}\")"
     ]
   }
 }
