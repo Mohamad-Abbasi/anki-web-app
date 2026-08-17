@@ -18,6 +18,7 @@ export default function SettingsPage() {
   const [form, setForm] = useState(null);
   const [toast, setToast] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [uploadInfo, setUploadInfo] = useState(null);
   const [theme, setTheme] = useState(localStorage.getItem('theme') || 'dark');
   const backupInputRef = useRef(null);
 
@@ -48,38 +49,55 @@ export default function SettingsPage() {
 
   const flash = (m) => { setToast(m); setTimeout(() => setToast(null), 3000); };
 
-  // آپلود دک‌های محلی به ابر، با برآورد حجم مدیا و هشدار سهمیه.
-  const uploadLocal = async () => {
+  /**
+   * آپلود دک‌های محلی به ابر.
+   * @param {boolean} includeResume ادامه‌دادن آپلود مدیای دک‌هایی که قبلاً ثبت شده‌اند
+   */
+  const uploadLocal = async (includeResume = false) => {
     const pendingDecks = decks.filter((d) => !d.cloudId);
-    if (!pendingDecks.length) { flash('همه‌ی دک‌ها قبلاً آپلود شده‌اند / Nothing to upload'); return; }
+    if (!pendingDecks.length && !includeResume) {
+      flash('همه‌ی دک‌ها قبلاً آپلود شده‌اند / Nothing to upload');
+      return;
+    }
 
+    const target = includeResume ? decks : pendingDecks;
     let totalBytes = 0, totalFiles = 0;
-    for (const d of pendingDecks) {
+    for (const d of target) {
       const est = await estimateDeckMedia(d.id);
       totalBytes += est.bytes; totalFiles += est.count;
     }
+
+    let skipMedia = false;
     if (totalBytes > 0) {
       const pct = Math.round((totalBytes / FREE_STORAGE_BYTES) * 100);
       const ok = confirm(
-        `آپلود ${pendingDecks.length} دک شامل ${totalFiles} فایل مدیا (~${mb(totalBytes)}MB) است.\n` +
-        `این حدود ${pct}٪ از سهمیه‌ی رایگان ۱GB را مصرف می‌کند. ادامه؟\n\n` +
-        `Uploading ~${mb(totalBytes)}MB of media (~${pct}% of the 1GB free tier). Continue?`,
+        `این دک‌ها ${totalFiles} فایل مدیا (~${mb(totalBytes)}MB) دارند — حدود ${pct}٪ از سهمیه‌ی رایگان ۱GB.\n` +
+        `آپلود مدیا ممکن است چند دقیقه طول بکشد (قابل ادامه است؛ اگر قطع شد دوباره بزن).\n\n` +
+        `OK = آپلود همراه با مدیا\nCancel = فقط متن کارت‌ها، بدون مدیا`,
       );
-      if (!ok) return;
+      if (!ok) skipMedia = true;
     }
 
     setBusy(true);
+    setUploadInfo({ label: 'شروع / Starting…', pct: 0 });
     try {
       const res = await pushAllLocalDecks(user.id, (p) => {
-        if (p.deck) flash(`آپلود / Uploading: ${p.deck} (${p.index}/${p.total})`);
-        else if (p.phase === 'media') flash(`مدیا / Media: ${p.done}/${p.total}`);
-      });
+        if (p.deck) {
+          setUploadInfo({ label: `دک / Deck ${p.index}/${p.total}: ${p.deck}`, pct: 0 });
+        } else if (p.phase === 'media') {
+          const pct = p.total ? Math.round((p.done / p.total) * 100) : 0;
+          setUploadInfo({ label: `مدیا / Media ${p.done}/${p.total}`, pct });
+        } else if (p.phase === 'notes' || p.phase === 'cards') {
+          setUploadInfo({ label: `${p.phase}: ${p.done}`, pct: 0 });
+        }
+      }, { skipMedia, includeResume });
       await sync();
-      flash(`آپلود شد / Uploaded: ${res.uploaded} دک`);
+      flash(`آپلود شد / Uploaded: ${res.uploaded} دک${res.resumed ? `، ادامه‌ی ${res.resumed} دک` : ''}`);
     } catch (e) {
       flash('خطا / Error: ' + e.message);
     } finally {
       setBusy(false);
+      setUploadInfo(null);
     }
   };
 
@@ -172,8 +190,18 @@ export default function SettingsPage() {
           </p>
           <div className="row" style={{ flexWrap: 'wrap', marginBottom: 10 }}>
             <button className="btn primary" onClick={sync} disabled={busy}>↻ همگام‌سازی / Sync now</button>
-            <button className="btn" onClick={uploadLocal} disabled={busy}>⬆ آپلود دک‌های محلی / Upload local decks</button>
+            <button className="btn" onClick={() => uploadLocal(false)} disabled={busy}>⬆ آپلود دک‌های محلی / Upload local decks</button>
+            <button className="btn" onClick={() => uploadLocal(true)} disabled={busy} title="ادامه‌ی آپلود مدیای ناتمام">
+              ⟳ ادامه‌ی آپلود مدیا / Resume media
+            </button>
           </div>
+
+          {uploadInfo && (
+            <div className="upload-progress">
+              <div className="bar-outer"><div className="bar-inner" style={{ width: `${uploadInfo.pct}%` }} /></div>
+              <span>{uploadInfo.label}{uploadInfo.pct ? ` — ${uploadInfo.pct}%` : ''}</span>
+            </div>
+          )}
           <button className="btn danger block" onClick={() => signOut()}>خروج / Sign out</button>
         </div>
       )}

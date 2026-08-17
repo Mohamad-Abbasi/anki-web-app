@@ -74,7 +74,10 @@ export default function DeckList() {
           setProgress(`آپلود به ابر / Uploading: ${d.name}`);
           try {
             await pushDeckTree(d.id, userId, (p) => {
-              if (p.phase === 'media') setProgress(`آپلود مدیا / Uploading media: ${p.done}/${p.total}`);
+              if (p.phase === 'media') {
+                const pct = p.total ? Math.round((p.done / p.total) * 100) : 0;
+                setProgress(`آپلود مدیا / Media: ${p.done}/${p.total} (${pct}%)`);
+              }
             });
           } catch (e) { console.error('push failed:', e); }
         }

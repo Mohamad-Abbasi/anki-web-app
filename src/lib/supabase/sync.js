@@ -348,6 +348,36 @@ async function batchInsertReturn(table, rows, size = 200) {
   return out;
 }
 
+/**
+ * اجرای موازی با محدودیت هم‌زمانی — به‌جای آپلود یکی‌یکی.
+ * سرعت را چند برابر می‌کند چون رفت‌وبرگشت‌ها هم‌پوشانی پیدا می‌کنند.
+ */
+async function runPool(items, worker, concurrency = 8, onTick) {
+  let next = 0, done = 0;
+  const runners = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+    while (next < items.length) {
+      const item = items[next++];
+      try { await worker(item); } catch { /* best-effort */ }
+      onTick?.(++done);
+    }
+  });
+  await Promise.all(runners);
+}
+
+// فهرست فایل‌هایی که قبلاً در Storage آپلود شده‌اند (برای ازسرگیری و پرش).
+async function listUploadedMedia(prefix) {
+  const found = new Set();
+  const PAGE = 1000;
+  for (let offset = 0; ; offset += PAGE) {
+    const { data, error } = await supabase.storage.from('media')
+      .list(prefix, { limit: PAGE, offset });
+    if (error || !data?.length) break;
+    for (const f of data) found.add(f.name);
+    if (data.length < PAGE) break;
+  }
+  return found;
+}
+
 // حجم تقریبی مدیای یک دک (بایت) — برای هشدار سهمیه.
 export async function estimateDeckMedia(localDeckId) {
   const notes = await db.notes.where('deckId').equals(Number(localDeckId)).toArray();
@@ -360,7 +390,7 @@ export async function estimateDeckMedia(localDeckId) {
   return { count: names.length, bytes };
 }
 
-export async function pushDeckTree(localDeckId, userId, onProgress) {
+export async function pushDeckTree(localDeckId, userId, onProgress, { skipMedia = false } = {}) {
   const deck = await db.decks.get(Number(localDeckId));
   if (!deck) return;
 
@@ -402,31 +432,55 @@ export async function pushDeckTree(localDeckId, userId, onProgress) {
     onProgress?.({ phase: 'cards', done: newCards.length });
   }
 
-  // مدیا زیر پوشه‌ی دک ذخیره می‌شود تا نام‌های تکراری دک‌های مختلف تداخل نکنند.
+  // --- مدیا: موازی، قابل‌ازسرگیری، زیر پوشه‌ی دک (تا نام‌های تکراری تداخل نکنند) ---
   const names = collectMediaNames(notes);
-  let mediaDone = 0;
-  for (const name of names) {
-    const rec = await getMedia(name);
-    if (rec?.blob) {
-      try {
+  let uploaded = 0, skipped = 0;
+
+  if (names.length && !skipMedia) {
+    // آنچه قبلاً آپلود شده دوباره فرستاده نمی‌شود → ازسرگیری سریع پس از قطع شدن.
+    let already = new Set();
+    try { already = await listUploadedMedia(cloudDeckId); } catch { /* ignore */ }
+    const todo = names.filter((n) => !already.has(n));
+    skipped = names.length - todo.length;
+
+    onProgress?.({ phase: 'media', done: skipped, total: names.length, skipped });
+
+    await runPool(
+      todo,
+      async (name) => {
+        const rec = await getMedia(name);
+        if (!rec?.blob) return;
         await supabase.storage.from('media')
-          .upload(`${cloudDeckId}/${name}`, rec.blob, { upsert: true, contentType: rec.blob.type });
-      } catch { /* best-effort */ }
-    }
-    if (++mediaDone % 100 === 0) onProgress?.({ phase: 'media', done: mediaDone, total: names.length });
+          .upload(`${cloudDeckId}/${name}`, rec.blob, { contentType: rec.blob.type });
+      },
+      8,
+      (n) => {
+        uploaded = n;
+        if (n % 10 === 0 || n === todo.length) {
+          onProgress?.({ phase: 'media', done: skipped + n, total: names.length, skipped });
+        }
+      },
+    );
   }
-  return { cloudDeckId, notes: newNotes.length, cards: newCards.length, media: names.length };
+
+  return {
+    cloudDeckId, notes: newNotes.length, cards: newCards.length,
+    media: names.length, mediaUploaded: uploaded, mediaSkipped: skipped,
+  };
 }
 
-export async function pushAllLocalDecks(userId, onProgress) {
+export async function pushAllLocalDecks(userId, onProgress, opts = {}) {
   const decks = await db.decks.toArray();
+  // دک‌هایی که هنوز آپلود نشده‌اند، و آن‌هایی که آپلودشان ناتمام مانده.
   const pending = decks.filter((d) => !d.cloudId);
+  const resumable = opts.includeResume ? decks.filter((d) => d.cloudId) : [];
+  const all = [...pending, ...resumable];
   let i = 0;
-  for (const d of pending) {
-    onProgress?.({ deck: d.name, index: ++i, total: pending.length });
-    await pushDeckTree(d.id, userId, onProgress);
+  for (const d of all) {
+    onProgress?.({ deck: d.name, index: ++i, total: all.length });
+    await pushDeckTree(d.id, userId, onProgress, opts);
   }
-  return { uploaded: pending.length };
+  return { uploaded: pending.length, resumed: resumable.length };
 }
 
 export async function cloudDeleteDeck(cloudDeckId) {
