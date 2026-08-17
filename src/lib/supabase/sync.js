@@ -463,10 +463,61 @@ export async function pushDeckTree(localDeckId, userId, onProgress, { skipMedia 
     );
   }
 
+  // ثبت وضعیت آپلود روی خود دک تا در فهرست دک‌ها نمایش داده شود.
+  await db.decks.update(deck.id, {
+    cloudSync: {
+      at: Date.now(),
+      mediaTotal: names.length,
+      mediaDone: skipMedia ? 0 : skipped + uploaded,
+      skipMedia,
+    },
+  });
+
   return {
     cloudDeckId, notes: newNotes.length, cards: newCards.length,
     media: names.length, mediaUploaded: uploaded, mediaSkipped: skipped,
   };
+}
+
+/**
+ * بررسی واقعیِ کامل‌بودن آپلود یک دک (با پرس‌وجو از ابر).
+ * @returns {object} {complete, notesLocal, notesCloud, cardsLocal, cardsCloud, mediaLocal, mediaCloud}
+ */
+export async function verifyDeckUpload(localDeckId) {
+  const deck = await db.decks.get(Number(localDeckId));
+  if (!deck) return null;
+  if (!deck.cloudId) return { complete: false, uploaded: false };
+
+  const notes = await db.notes.where('deckId').equals(deck.id).toArray();
+  const cards = await db.cards.where('deckId').equals(deck.id).toArray();
+
+  const [nRes, cRes] = await Promise.all([
+    supabase.from('notes').select('id', { count: 'exact', head: true }).eq('deck_id', deck.cloudId).eq('deleted', false),
+    supabase.from('cards').select('id', { count: 'exact', head: true }).eq('deck_id', deck.cloudId).eq('deleted', false),
+  ]);
+
+  const mediaLocal = collectMediaNames(notes);
+  let mediaCloud = 0;
+  try { mediaCloud = (await listUploadedMedia(deck.cloudId)).size; } catch { mediaCloud = -1; }
+
+  const notesCloud = nRes.count ?? 0;
+  const cardsCloud = cRes.count ?? 0;
+  const complete =
+    notesCloud >= notes.length &&
+    cardsCloud >= cards.length &&
+    (mediaCloud === -1 || mediaCloud >= mediaLocal.length);
+
+  const status = {
+    uploaded: true, complete,
+    notesLocal: notes.length, notesCloud,
+    cardsLocal: cards.length, cardsCloud,
+    mediaLocal: mediaLocal.length, mediaCloud,
+  };
+
+  await db.decks.update(deck.id, {
+    cloudSync: { at: Date.now(), mediaTotal: mediaLocal.length, mediaDone: Math.max(0, mediaCloud), verified: complete },
+  });
+  return status;
 }
 
 export async function pushAllLocalDecks(userId, onProgress, opts = {}) {

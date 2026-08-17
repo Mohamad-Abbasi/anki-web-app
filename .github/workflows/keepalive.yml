@@ -1,0 +1,36 @@
+name: Keep Supabase awake
+
+# پروژه‌های رایگان Supabase پس از حدود ۷ روز بی‌فعالیتی pause می‌شوند.
+# این ورک‌فلو هر روز یک درخواست کوچک می‌فرستد تا پروژه فعال بماند.
+on:
+  schedule:
+    - cron: '17 6 * * *'   # هر روز ساعت ۰۶:۱۷ UTC
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read Supabase config from source
+        id: cfg
+        run: |
+          URL=$(grep -oE "HARDCODED_URL = '[^']+'" src/lib/supabase/config.js | sed "s/.*'\(.*\)'/\1/")
+          KEY=$(grep -oE "HARDCODED_ANON = '[^']+'" src/lib/supabase/config.js | sed "s/.*'\(.*\)'/\1/")
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+          echo "::add-mask::$KEY"
+          echo "key=$KEY" >> "$GITHUB_OUTPUT"
+
+      - name: Ping database (keeps project active)
+        run: |
+          CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 30 \
+            -H "apikey: ${{ steps.cfg.outputs.key }}" \
+            -H "Authorization: Bearer ${{ steps.cfg.outputs.key }}" \
+            "${{ steps.cfg.outputs.url }}/rest/v1/profiles?select=id&limit=1")
+          echo "HTTP $CODE"
+          if [ "$CODE" -ge 500 ] || [ "$CODE" -eq 000 ]; then
+            echo "::warning::Supabase ping returned $CODE — project may be paused."
+            exit 1
+          fi
+          echo "Supabase project is awake."

@@ -151,6 +151,9 @@ input:focus, textarea:focus, select:focus {
 .pill.new { background: rgba(76, 201, 240, 0.15); color: var(--primary); }
 .pill.learn { background: rgba(239, 68, 68, 0.15); color: var(--again); }
 .pill.review { background: rgba(34, 197, 94, 0.15); color: var(--good); }
+.pill.cloud-done { background: rgba(34, 197, 94, 0.15); color: var(--good); }
+.pill.cloud-partial { background: rgba(245, 158, 11, 0.15); color: var(--hard); }
+.pill.cloud-local { background: rgba(139, 143, 181, 0.15); color: var(--muted); }
 .icon-btn { background: transparent; border: none; color: var(--muted); padding: 8px; border-radius: 8px; }
 .twisty { font-size: 0.9rem; padding: 4px 6px; }
 .twisty-spacer { display: inline-block; width: 22px; flex: 0 0 22px; }

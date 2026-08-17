@@ -7,6 +7,21 @@ import { pushDeckTree, getSyncUser, cloudDeleteDeck } from '../lib/supabase/sync
 import { useAuth } from '../auth/AuthContext.jsx';
 import { buildDeckTree, flattenTree, collectDeckIds } from '../lib/deckTree.js';
 import CustomStudy from './CustomStudy.jsx';
+import { verifyDeckUpload } from '../lib/supabase/sync.js';
+
+// نشان وضعیت آپلود دک در ابر.
+function cloudBadge(deck) {
+  if (!cloudEnabled) return null;
+  if (!deck.cloudId) return { cls: 'local', text: '⌂ محلی / Local' };
+  const s = deck.cloudSync;
+  if (!s) return { cls: 'partial', text: '☁ ابری / Cloud' };
+  if (s.skipMedia) return { cls: 'partial', text: '☁ بدون مدیا / No media' };
+  if (s.mediaTotal === 0 || s.mediaDone >= s.mediaTotal) {
+    return { cls: 'done', text: s.verified ? '✓ کامل / Complete' : '☁ آپلودشده / Uploaded' };
+  }
+  const pct = Math.round((s.mediaDone / s.mediaTotal) * 100);
+  return { cls: 'partial', text: `⏳ مدیا ${pct}%` };
+}
 
 export default function DeckList() {
   const { decks, counts, loading, addNewDeck, removeDeck, refresh } = useDecks();
@@ -158,11 +173,31 @@ export default function DeckList() {
                 <span className="pill new">جدید {c.new}</span>
                 <span className="pill learn">یادگیری {c.learn}</span>
                 <span className="pill review">مرور {c.review}</span>
+                {deck && (() => {
+                  const b = cloudBadge(deck);
+                  return b ? <span className={`pill cloud-${b.cls}`}>{b.text}</span> : null;
+                })()}
               </div>
             </div>
 
             {deck && (
               <>
+                {cloudEnabled && deck.cloudId && (
+                  <button
+                    className="icon-btn"
+                    title="بررسی کامل‌بودن آپلود / Verify upload"
+                    onClick={async () => {
+                      flash('در حال بررسی... / Checking...');
+                      try {
+                        const s = await verifyDeckUpload(deck.id);
+                        await refresh();
+                        flash(s.complete
+                          ? `✓ کامل است — ${s.cardsCloud} کارت، ${s.mediaCloud} مدیا`
+                          : `⚠ ناقص — کارت ${s.cardsCloud}/${s.cardsLocal}، مدیا ${s.mediaCloud}/${s.mediaLocal}`);
+                      } catch (e) { flash('خطا / Error: ' + e.message); }
+                    }}
+                  >🔍</button>
+                )}
                 <button className="icon-btn" title="مطالعه‌ی سفارشی / Custom study" onClick={() => setCustomFor(deck)}>⚙</button>
                 <button className="icon-btn" title="مرور کارت‌ها / Browse" onClick={() => navigate(`/browse/${deck.id}`)}>✎</button>
                 <button
