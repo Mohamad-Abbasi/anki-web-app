@@ -15,7 +15,13 @@
       "Bash(xargs -I{} du -k \"{}\")",
       "Bash(curl -s \"https://api.github.com/repos/Mohamad-Abbasi/anki-web-app/actions/runs?per_page=3\")",
       "Bash(sed -i 's/expect\\(r.interval\\).toBe\\(25\\);/expect\\(r.interval\\).toBe\\(999\\);/' src/lib/scheduler/scheduler.test.js)",
-      "Bash(npm test *)"
+      "Bash(npm test *)",
+      "Bash(curl -s -o /dev/null -w \"http_code=%{http_code} time=%{time_total}s\\\\n\" --max-time 20 \"https://yumqspanhrprqwybbyam.supabase.co/auth/v1/health\")",
+      "Bash(curl -s -o /dev/null -w \"http_code=%{http_code}\\\\n\" --max-time 20 \"https://yumqspanhrprqwybbyam.supabase.co/rest/v1/\")",
+      "Bash(nslookup yumqspanhrprqwybbyam.supabase.co 8.8.8.8)",
+      "Bash(nslookup api.supabase.com 8.8.8.8)",
+      "Bash(nslookup vhxtkqawovcpniciozcx.supabase.co)",
+      "Bash(curl -s -o /dev/null -w \"http_code=%{http_code}\\\\n\" --max-time 25 -H \"apikey: sb_publishable_eLSyI584_973Hac2sYHGNQ_G2X55nF4\" \"https://vhxtkqawovcpniciozcx.supabase.co/rest/v1/profiles?select=id&limit=1\")"
     ]
   }
 }
