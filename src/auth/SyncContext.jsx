@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
-import { flushOutbox, pendingCount, syncNow as doSync } from '../lib/supabase/sync.js';
+import { flushQueue, pendingCount, syncNow as doSync } from '../lib/supabase/sync.js';
 import { useAuth } from './AuthContext.jsx';
 
 const SyncCtx = createContext(null);
@@ -27,11 +27,11 @@ export function SyncProvider({ children }) {
   useEffect(() => {
     refreshPending();
     if (!navigator.onLine) setStatus('offline');
-    const onOnline = () => { setStatus('syncing'); flushOutbox().then(() => { refreshPending(); setStatus('synced'); }); };
+    const onOnline = () => { setStatus('syncing'); flushQueue().then(() => { refreshPending(); setStatus('synced'); }); };
     const onOffline = () => setStatus('offline');
     window.addEventListener('online', onOnline);
     window.addEventListener('offline', onOffline);
-    timer.current = setInterval(() => { flushOutbox().then(refreshPending); }, 30000);
+    timer.current = setInterval(() => { flushQueue().then(refreshPending); }, 30000);
     return () => {
       window.removeEventListener('online', onOnline);
       window.removeEventListener('offline', onOffline);

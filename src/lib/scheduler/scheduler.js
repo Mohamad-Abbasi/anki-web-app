@@ -228,22 +228,53 @@ export async function answerCard(card, rating, deck) {
 
 /**
  * ساخت صف مطالعه‌ی یک دک با رعایت محدودیت روزانه.
- * ترتیب: کارت‌های یادگیری سررسیده → کارت‌های جدید → مرورهای سررسیده.
+ * ترتیب پیش‌فرض: یادگیری → جدید → مرورهای سررسیده.
+ *
+ * @param {number} deckId
+ * @param {object} [opts] گزینه‌های مطالعه‌ی سفارشی
+ * @param {'due'|'cram'|'lapses'} [opts.mode]
+ * @param {string} [opts.tag] فقط کارت‌های نوت‌هایی با این برچسب
+ * @param {number} [opts.limit] سقف تعداد کارت (برای حالت‌های سفارشی)
  */
-export async function buildStudyQueue(deckId) {
+export async function buildStudyQueue(deckId, opts = {}) {
   const deck = await getDeck(deckId);
   const c = deck?.config || {};
   const newLimit = c.newPerDay ?? 20;
   const reviewLimit = c.reviewsPerDay ?? 200;
   const nowMs = Date.now();
+  const mode = opts.mode || 'due';
 
-  // باقی‌مانده‌ی سهمیه‌ی امروز با احتساب آنچه پیش‌تر امروز انجام شده.
+  const all = await db.cards.where('deckId').equals(Number(deckId)).toArray();
+  let active = all.filter((x) => x.queue !== Queue.Suspended && x.queue !== Queue.Buried);
+
+  // فیلتر برچسب (بر اساس نوت‌ها)
+  if (opts.tag) {
+    const notes = await db.notes.where('deckId').equals(Number(deckId)).toArray();
+    const ok = new Set(notes.filter((n) => (n.tags || []).includes(opts.tag)).map((n) => n.id));
+    active = active.filter((x) => ok.has(x.noteId));
+  }
+
+  const limit = Number(opts.limit) > 0 ? Number(opts.limit) : Infinity;
+
+  // مرور فشرده: همه‌ی کارت‌ها بدون توجه به سررسید، به‌صورت تصادفی.
+  if (mode === 'cram') {
+    const shuffled = [...active].sort(() => Math.random() - 0.5).slice(0, limit);
+    return { queue: shuffled, deck, cram: true };
+  }
+
+  // فقط کارت‌های سخت (بیشترین لغزش).
+  if (mode === 'lapses') {
+    const hard = active
+      .filter((x) => (x.lapses || 0) > 0)
+      .sort((a, b) => (b.lapses || 0) - (a.lapses || 0))
+      .slice(0, limit);
+    return { queue: hard, deck, cram: true };
+  }
+
+  // حالت عادی: با رعایت سهمیه‌ی باقی‌مانده‌ی امروز.
   const daily = currentDaily(deck);
   const newRemaining = Math.max(0, newLimit - daily.newDone);
   const reviewRemaining = Math.max(0, reviewLimit - daily.revDone);
-
-  const all = await db.cards.where('deckId').equals(Number(deckId)).toArray();
-  const active = all.filter((x) => x.queue !== Queue.Suspended && x.queue !== Queue.Buried);
 
   const learning = active
     .filter((x) => (x.state === State.Learning || x.state === State.Relearning))
@@ -259,7 +290,8 @@ export async function buildStudyQueue(deckId) {
     .sort((a, b) => (a.due ?? 0) - (b.due ?? 0))
     .slice(0, reviewRemaining);
 
-  return { queue: [...learning, ...newCards, ...reviews], deck };
+  const queue = [...learning, ...newCards, ...reviews];
+  return { queue: limit === Infinity ? queue : queue.slice(0, limit), deck, cram: false };
 }
 
 export { State, Rating };

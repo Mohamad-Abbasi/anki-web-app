@@ -1,5 +1,5 @@
 import { useState, useCallback, useMemo, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import StudyView from '../components/StudyView.jsx';
 import CardEditor from '../components/CardEditor.jsx';
 import { useStudy } from '../hooks/useStudy.js';
@@ -10,7 +10,16 @@ import { clearMediaCache } from '../lib/render/media.js';
 export default function StudyPage() {
   const { deckId } = useParams();
   const navigate = useNavigate();
-  const { deck, queue, currentCard, stats, isComplete, loading, canUndo, handleAnswer, undo, loadQueue, preview } = useStudy(deckId);
+  const [searchParams] = useSearchParams();
+  const studyOptions = useMemo(() => ({
+    mode: searchParams.get('mode') || undefined,
+    tag: searchParams.get('tag') || undefined,
+    limit: searchParams.get('limit') || undefined,
+  }), [searchParams]);
+  const {
+    deck, queue, currentCard, stats, isComplete, loading, canUndo, isCram,
+    handleAnswer, undo, loadQueue, preview,
+  } = useStudy(deckId, studyOptions);
   const [editor, setEditor] = useState(null);
 
   const intervals = useMemo(() => preview(currentCard), [preview, currentCard]);
@@ -67,7 +76,10 @@ export default function StudyPage() {
         </div>
       </div>
 
-      <div className="study-progress">پاسخ‌داده {stats.answered} · باقی‌مانده {queue.length}</div>
+      <div className="study-progress">
+        پاسخ‌داده {stats.answered} · باقی‌مانده {queue.length}
+        {isCram && <span className="pill learn" style={{ marginInlineStart: 8 }}>فشرده / Cram</span>}
+      </div>
 
       <StudyView
         card={currentCard}

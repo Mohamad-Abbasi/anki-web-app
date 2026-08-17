@@ -56,4 +56,18 @@ db.version(4).stores({
   outbox: '&cloudCardId, updatedAt', // یک ردیف به ازای هر کارت (آخرین وضعیت)
 });
 
+// نسخه‌ی ۵: صف همگام‌سازیِ عمومی (پیشرفت، ویرایش نوت، جابه‌جایی کارت، شمارنده‌ی روزانه)
+// و ذخیره‌ی owner برای بررسی دسترسی ویرایش.
+db.version(5).stores({
+  decks: '++id, name, parentId, modifiedAt, cloudId, owner',
+  notes: '++id, deckId, modelId, modifiedAt, *tags, cloudId, owner',
+  cards: '++id, noteId, deckId, due, state, queue, cloudId',
+  models: '&mid, name',
+  revlog: '++id, cardId, reviewedAt',
+  media: '&name',
+  config: '&key',
+  outbox: null, // جایگزین شد با syncq
+  syncq: '++id, kind, key, [kind+key], updatedAt',
+});
+
 export default db;

@@ -81,6 +81,17 @@ create table if not exists public.progress (
   primary key (user_id, card_id)
 );
 
+-- شمارنده‌ی روزانه‌ی هر کاربر برای هر دک (محدودیت روزانه بین دستگاه‌ها مشترک شود)
+create table if not exists public.daily (
+  user_id  uuid references auth.users(id) on delete cascade,
+  deck_id  uuid references public.decks(id) on delete cascade,
+  day      int not null,
+  new_done int default 0,
+  rev_done int default 0,
+  updated_at timestamptz not null default now(),
+  primary key (user_id, deck_id, day)
+);
+
 -- ستون‌های updated_at و deleted (همگام‌سازی افزایشی + حذف نرم)
 do $$ declare t text; begin
   foreach t in array array['models','decks','notes','cards'] loop
@@ -115,6 +126,11 @@ drop policy if exists "progress own" on public.progress;
 create policy "progress own" on public.progress for all to authenticated
   using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
+alter table public.daily enable row level security;
+drop policy if exists "daily own" on public.daily;
+create policy "daily own" on public.daily for all to authenticated
+  using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
 -- ---------- تریگر updated_at ----------
 create or replace function public.touch_updated_at()
 returns trigger language plpgsql as $$
@@ -138,5 +154,9 @@ insert into storage.buckets (id, name, public) values ('media','media',true)
 on conflict (id) do nothing;
 drop policy if exists "media public read" on storage.objects;
 drop policy if exists "media auth upload" on storage.objects;
+drop policy if exists "media auth update" on storage.objects;
 create policy "media public read" on storage.objects for select using (bucket_id = 'media');
 create policy "media auth upload" on storage.objects for insert to authenticated with check (bucket_id = 'media');
+-- لازم برای upsert (آپلود دوباره‌ی همان فایل) وگرنه بار دوم خطا می‌دهد
+create policy "media auth update" on storage.objects for update to authenticated
+  using (bucket_id = 'media') with check (bucket_id = 'media');

@@ -152,6 +152,8 @@ input:focus, textarea:focus, select:focus {
 .pill.learn { background: rgba(239, 68, 68, 0.15); color: var(--again); }
 .pill.review { background: rgba(34, 197, 94, 0.15); color: var(--good); }
 .icon-btn { background: transparent; border: none; color: var(--muted); padding: 8px; border-radius: 8px; }
+.twisty { font-size: 0.9rem; padding: 4px 6px; }
+.twisty-spacer { display: inline-block; width: 22px; flex: 0 0 22px; }
 .icon-btn:hover { background: var(--surface-2); color: var(--text); }
 
 .empty { text-align: center; color: var(--muted); padding: 48px 20px; }
@@ -162,6 +164,7 @@ input:focus, textarea:focus, select:focus {
 .field { margin-bottom: 14px; }
 .field label { display: block; font-size: 0.85rem; color: var(--muted); margin-bottom: 6px; font-weight: 600; }
 .lbl-hint { color: var(--muted); font-weight: 400; font-size: 0.78rem; }
+.notice-readonly { background: rgba(245,158,11,0.12); border: 1px solid var(--hard); color: var(--hard); padding: 10px 12px; border-radius: var(--radius-sm); font-size: 0.82rem; margin-bottom: 14px; }
 .row { display: flex; gap: 10px; }
 
 /* ---------- Study view ---------- */

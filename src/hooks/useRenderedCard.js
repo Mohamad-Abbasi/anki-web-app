@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { getNote, getModel } from '../lib/database/models.js';
+import { getNote, getModel, getDeck } from '../lib/database/models.js';
 import { renderCard } from '../lib/render/template.js';
 import { resolveMedia } from '../lib/render/media.js';
 import { sanitizeHtml } from '../lib/render/sanitize.js';
@@ -22,11 +22,12 @@ export function useRenderedCard(card) {
         return;
       }
       const model = await getModel(note.modelId);
+      const deck = await getDeck(card.deckId);
       const { question, answer, css } = renderCard(note, model, card.ord || 0);
       // اول پاک‌سازی (حذف اسکریپت/رویداد)، بعد جایگزینی مدیا با blob URL.
       const [q, a] = await Promise.all([
-        resolveMedia(sanitizeHtml(question)),
-        resolveMedia(sanitizeHtml(answer)),
+        resolveMedia(sanitizeHtml(question), deck?.cloudId),
+        resolveMedia(sanitizeHtml(answer), deck?.cloudId),
       ]);
       if (alive) setContent({ question: q, answer: a, css, loading: false });
     })();

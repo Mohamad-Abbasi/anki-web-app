@@ -4,7 +4,7 @@ import { State } from '../lib/algorithms/fsrs.js';
 import { updateCard, updateDeck } from '../lib/database/models.js';
 import db from '../lib/database/db.js';
 import { cloudEnabled } from '../lib/supabase/client.js';
-import { enqueueProgress } from '../lib/supabase/sync.js';
+import { enqueueProgress, enqueueDaily } from '../lib/supabase/sync.js';
 
 // کارت بعدی: ابتدا کارت‌های سررسیده (با کمترین due)، وگرنه نزدیک‌ترین کارت آینده.
 function pickNext(pool, now) {
@@ -14,7 +14,8 @@ function pickNext(pool, now) {
   return arr.reduce((m, c) => ((c.due ?? 0) < (m.due ?? 0) ? c : m), arr[0]);
 }
 
-export function useStudy(deckId) {
+export function useStudy(deckId, options = {}) {
+  const { mode, tag, limit } = options;
   const [deck, setDeck] = useState(null);
   const [pool, setPool] = useState([]);
   const [current, setCurrent] = useState(null);
@@ -22,15 +23,18 @@ export function useStudy(deckId) {
   const [stats, setStats] = useState({ answered: 0, correct: 0 });
   const [loading, setLoading] = useState(true);
   const [canUndo, setCanUndo] = useState(false);
+  const [isCram, setIsCram] = useState(false);
 
   const poolRef = useRef([]);
   const deckRef = useRef(null);
   const undoRef = useRef(null);
+  const cramRef = useRef(false);
 
   const apply = useCallback((p) => {
     poolRef.current = p;
     setPool(p);
-    const n = pickNext(p, Date.now());
+    // در حالت فشرده ترتیب ثابت است (سررسید معنا ندارد).
+    const n = cramRef.current ? (p[0] || null) : pickNext(p, Date.now());
     setCurrent(n);
     setIsComplete(!n);
   }, []);
@@ -38,8 +42,10 @@ export function useStudy(deckId) {
   const loadQueue = useCallback(async () => {
     setLoading(true);
     try {
-      const { queue, deck: d } = await buildStudyQueue(deckId);
+      const { queue, deck: d, cram } = await buildStudyQueue(deckId, { mode, tag, limit });
       deckRef.current = d;
+      cramRef.current = !!cram;
+      setIsCram(!!cram);
       setDeck(d);
       setStats({ answered: 0, correct: 0 });
       setCanUndo(false);
@@ -51,7 +57,7 @@ export function useStudy(deckId) {
     } finally {
       setLoading(false);
     }
-  }, [deckId, apply]);
+  }, [deckId, mode, tag, limit, apply]);
 
   useEffect(() => {
     loadQueue();
@@ -60,15 +66,26 @@ export function useStudy(deckId) {
   const handleAnswer = useCallback(async (rating) => {
     const card = current;
     if (!card) return;
+
+    // حالت فشرده: زمان‌بندی واقعی دست‌نخورده می‌ماند.
+    if (cramRef.current) {
+      setStats((p) => ({ answered: p.answered + 1, correct: p.correct + (rating >= 3 ? 1 : 0) }));
+      let rest = poolRef.current.filter((c) => c.id !== card.id);
+      if (rating === 1) rest = [...rest, card]; // «دوباره» در همین جلسه تکرار شود
+      apply(rest);
+      return;
+    }
+
     const d = deckRef.current;
     const dailyBefore = d?.daily ? { ...d.daily } : null;
     const snapshot = { ...card };
 
     const updated = await answerCard(card, rating, d);
 
-    // ثبت پیشرفت در صف آفلاین؛ هنگام آنلاین‌بودن خودکار به ابر می‌رود.
-    if (cloudEnabled && updated.cloudId) {
-      enqueueProgress(updated).catch(() => {});
+    // ثبت پیشرفت و شمارنده‌ی روزانه در صف آفلاین؛ هنگام آنلاین‌بودن خودکار به ابر می‌رود.
+    if (cloudEnabled) {
+      if (updated.cloudId) enqueueProgress(updated).catch(() => {});
+      if (deckRef.current?.cloudId) enqueueDaily(deckRef.current).catch(() => {});
     }
 
     undoRef.current = { snapshot, dailyBefore, rating };
@@ -110,7 +127,7 @@ export function useStudy(deckId) {
   );
 
   return {
-    deck, queue: pool, currentCard: current, isComplete, stats, loading, canUndo,
+    deck, queue: pool, currentCard: current, isComplete, stats, loading, canUndo, isCram,
     handleAnswer, undo, loadQueue, preview,
   };
 }

@@ -4,7 +4,8 @@ import {
   getDecks, moveNote,
 } from '../lib/database/models.js';
 import { cloudEnabled } from '../lib/supabase/client.js';
-import { pushDeckTree, getSyncUser } from '../lib/supabase/sync.js';
+import { pushDeckTree, getSyncUser, enqueueNoteEdit, enqueueNoteMove } from '../lib/supabase/sync.js';
+import { useAuth } from '../auth/AuthContext.jsx';
 
 // توضیح فارسی برای نام فیلدهای استاندارد (انگلیسی هم نگه داشته می‌شود).
 const FIELD_HINTS = {
@@ -20,6 +21,7 @@ function uniqueName(name) {
 }
 
 export default function CardEditor({ deckId, note, onClose }) {
+  const { user, isAdmin } = useAuth();
   const [models, setModels] = useState([]);
   const [modelId, setModelId] = useState(note?.modelId || 'basic');
   const [model, setModel] = useState(null);
@@ -88,14 +90,21 @@ export default function CardEditor({ deckId, note, onClose }) {
     try {
       const tagList = tags.split(/\s+/).filter(Boolean);
       if (note?.id) {
+        const moved = Number(targetDeck) !== Number(note.deckId);
         await updateNote(note.id, { fields, tags: tagList });
-        if (Number(targetDeck) !== Number(note.deckId)) await moveNote(note.id, targetDeck);
+        if (moved) await moveNote(note.id, targetDeck);
+        // ویرایش/جابه‌جایی را به ابر بفرست (از طریق صف، پس آفلاین هم گم نمی‌شود).
+        if (cloudEnabled && note.cloudId) {
+          const updated = { ...note, fields, tags: tagList, modelId };
+          if (moved) await enqueueNoteMove(note.id, targetDeck);
+          else await enqueueNoteEdit(updated);
+        }
       } else {
         await createNote({ deckId, modelId, fields, tags: tagList });
-      }
-      // همگام‌سازی دک با ابر (best-effort).
-      if (cloudEnabled) {
-        pushDeckTree(Number(note?.id ? targetDeck : deckId), getSyncUser()).catch(() => {});
+        // کارت جدید باید در ابر ثبت شود.
+        if (cloudEnabled) {
+          pushDeckTree(Number(deckId), getSyncUser()).catch(() => {});
+        }
       }
       onClose(true);
     } catch (err) {
@@ -106,11 +115,21 @@ export default function CardEditor({ deckId, note, onClose }) {
   }, [fields, tags, note, deckId, modelId, targetDeck, onClose]);
 
   const fieldNames = model?.flds || ['Front', 'Back'];
+  // نوتِ ابریِ متعلق به کاربر دیگر فقط‌خواندنی است (RLS هم آن را رد می‌کند).
+  const canEdit = !cloudEnabled || !note?.cloudId || !note?.owner
+    || isAdmin || note.owner === user?.id;
 
   return (
     <div className="overlay" onClick={() => onClose(false)}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <h3>{note ? 'ویرایش کارت / Edit Card' : 'کارت جدید / New Card'}</h3>
+
+        {!canEdit && (
+          <p className="notice-readonly">
+            🔒 این کارت متعلق به کاربر دیگری است؛ فقط قابل مشاهده است.<br />
+            Read-only: this card belongs to another user.
+          </p>
+        )}
 
         {!note && (
           <div className="field">
@@ -141,11 +160,13 @@ export default function CardEditor({ deckId, note, onClose }) {
               }}
               dir="auto"
               autoFocus={i === 0}
+              readOnly={!canEdit}
             />
           </div>
         ))}
 
         {/* ابزار قالب‌بندی و درج رسانه در فیلد فعال */}
+        {canEdit && (
         <div className="row" style={{ marginBottom: 10, flexWrap: 'wrap' }}>
           <button type="button" className="btn" onClick={() => wrap('b')} title="پررنگ / Bold"><b>B</b></button>
           <button type="button" className="btn" onClick={() => wrap('i')} title="مورب / Italic"><i>I</i></button>
@@ -153,6 +174,7 @@ export default function CardEditor({ deckId, note, onClose }) {
           <button type="button" className="btn" onClick={() => imgInputRef.current?.click()}>🖼 تصویر / Image</button>
           <button type="button" className="btn" onClick={() => audioInputRef.current?.click()}>🔊 صدا / Audio</button>
         </div>
+        )}
         <input ref={imgInputRef} type="file" accept="image/*" onChange={(e) => handleUpload(e, 'image')} style={{ display: 'none' }} />
         <input ref={audioInputRef} type="file" accept="audio/*" onChange={(e) => handleUpload(e, 'audio')} style={{ display: 'none' }} />
 
@@ -179,15 +201,17 @@ export default function CardEditor({ deckId, note, onClose }) {
 
         <div className="field">
           <label>برچسب‌ها / Tags <span className="lbl-hint">(با فاصله / space-separated)</span></label>
-          <input value={tags} onChange={(e) => setTags(e.target.value)} dir="auto" />
+          <input value={tags} onChange={(e) => setTags(e.target.value)} dir="auto" readOnly={!canEdit} />
         </div>
 
         {error && <p style={{ color: 'var(--again)', fontSize: '0.85rem' }}>{error}</p>}
 
         <div className="actions">
-          <button className="btn primary block" onClick={handleSave} disabled={saving}>
-            {saving ? 'در حال ذخیره...' : 'ذخیره / Save'}
-          </button>
+          {canEdit && (
+            <button className="btn primary block" onClick={handleSave} disabled={saving}>
+              {saving ? 'در حال ذخیره...' : 'ذخیره / Save'}
+            </button>
+          )}
           <button className="btn ghost" onClick={() => onClose(false)}>بستن / Close</button>
         </div>
       </div>

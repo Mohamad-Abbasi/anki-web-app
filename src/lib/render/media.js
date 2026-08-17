@@ -5,9 +5,10 @@ import { getMedia } from '../database/models';
 import { SUPABASE_URL, cloudEnabled } from '../supabase/config';
 
 // آدرس عمومی مدیا در Storage (برای دک‌های مشترکی که مدیایشان محلی نیست).
-function publicMediaUrl(name) {
-  if (!cloudEnabled) return null;
-  return `${SUPABASE_URL}/storage/v1/object/public/media/${encodeURIComponent(name)}`;
+// مدیا زیر پوشه‌ی دک ذخیره می‌شود تا نام‌های تکراری تداخل نکنند.
+function publicMediaUrl(name, prefix) {
+  if (!cloudEnabled || !prefix) return null;
+  return `${SUPABASE_URL}/storage/v1/object/public/media/${encodeURIComponent(prefix)}/${encodeURIComponent(name)}`;
 }
 
 const MAX_CACHE = 150;
@@ -49,8 +50,12 @@ const SRC_RE = /(src|href)\s*=\s*["']([^"']+)["']/gi;
 const SOUND_RE = /\[sound:([^\]]+)\]/g;
 const EXTERNAL = /^(https?:|data:|blob:|#)/i;
 
-/** ارجاع‌های مدیای محلی را با blob URL جایگزین و [sound:x] را به <audio> تبدیل می‌کند. */
-export async function resolveMedia(html) {
+/**
+ * ارجاع‌های مدیای محلی را با blob URL جایگزین و [sound:x] را به <audio> تبدیل می‌کند.
+ * @param {string} html
+ * @param {string} [cloudPrefix] شناسه‌ی ابری دک، برای واکشی مدیا از Storage در نبود نسخه‌ی محلی
+ */
+export async function resolveMedia(html, cloudPrefix) {
   if (!html) return html;
   const names = new Set();
   let m;
@@ -65,7 +70,7 @@ export async function resolveMedia(html) {
   const map = {};
   await Promise.all(
     [...names].map(async (n) => {
-      const u = (await mediaUrl(n)) || publicMediaUrl(n.split('/').pop());
+      const u = (await mediaUrl(n)) || publicMediaUrl(n.split('/').pop(), cloudPrefix);
       if (u) map[n] = u;
     }),
   );

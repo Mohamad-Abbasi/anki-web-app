@@ -2,27 +2,18 @@ import { useState, useEffect, useRef } from 'react';
 import { useDecks } from '../hooks/useDecks.js';
 import { useAuth } from '../auth/AuthContext.jsx';
 import { useSync } from '../auth/SyncContext.jsx';
-import { pushAllLocalDecks } from '../lib/supabase/sync.js';
+import { pushAllLocalDecks, estimateDeckMedia } from '../lib/supabase/sync.js';
 import { exportBackup, importBackup } from '../lib/backup.js';
 import db from '../lib/database/db.js';
+
+// سهمیه‌ی رایگان Supabase Storage ≈ ۱ گیگابایت
+const FREE_STORAGE_BYTES = 1024 * 1024 * 1024;
+const mb = (b) => (b / 1048576).toFixed(0);
 
 export default function SettingsPage() {
   const { decks, updateDeck, loading, refresh } = useDecks();
   const { user, profile, signOut, cloudEnabled } = useAuth();
   const { status, pending, sync } = useSync();
-
-  const uploadLocal = async () => {
-    setBusy(true);
-    try {
-      const res = await pushAllLocalDecks(user.id, (p) => p.deck && flash(`آپلود / Uploading: ${p.deck} (${p.index}/${p.total})`));
-      await sync();
-      flash(`آپلود شد / Uploaded: ${res.uploaded} دک`);
-    } catch (e) {
-      flash('خطا / Error: ' + e.message);
-    } finally {
-      setBusy(false);
-    }
-  };
   const [selectedId, setSelectedId] = useState(null);
   const [form, setForm] = useState(null);
   const [toast, setToast] = useState(null);
@@ -56,6 +47,41 @@ export default function SettingsPage() {
   }, [deck]);
 
   const flash = (m) => { setToast(m); setTimeout(() => setToast(null), 3000); };
+
+  // آپلود دک‌های محلی به ابر، با برآورد حجم مدیا و هشدار سهمیه.
+  const uploadLocal = async () => {
+    const pendingDecks = decks.filter((d) => !d.cloudId);
+    if (!pendingDecks.length) { flash('همه‌ی دک‌ها قبلاً آپلود شده‌اند / Nothing to upload'); return; }
+
+    let totalBytes = 0, totalFiles = 0;
+    for (const d of pendingDecks) {
+      const est = await estimateDeckMedia(d.id);
+      totalBytes += est.bytes; totalFiles += est.count;
+    }
+    if (totalBytes > 0) {
+      const pct = Math.round((totalBytes / FREE_STORAGE_BYTES) * 100);
+      const ok = confirm(
+        `آپلود ${pendingDecks.length} دک شامل ${totalFiles} فایل مدیا (~${mb(totalBytes)}MB) است.\n` +
+        `این حدود ${pct}٪ از سهمیه‌ی رایگان ۱GB را مصرف می‌کند. ادامه؟\n\n` +
+        `Uploading ~${mb(totalBytes)}MB of media (~${pct}% of the 1GB free tier). Continue?`,
+      );
+      if (!ok) return;
+    }
+
+    setBusy(true);
+    try {
+      const res = await pushAllLocalDecks(user.id, (p) => {
+        if (p.deck) flash(`آپلود / Uploading: ${p.deck} (${p.index}/${p.total})`);
+        else if (p.phase === 'media') flash(`مدیا / Media: ${p.done}/${p.total}`);
+      });
+      await sync();
+      flash(`آپلود شد / Uploaded: ${res.uploaded} دک`);
+    } catch (e) {
+      flash('خطا / Error: ' + e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const save = async () => {
     if (!deck || !form) return;

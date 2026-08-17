@@ -13,7 +13,9 @@
       "Bash(git worktree *)",
       "Bash(node _geticon.mjs)",
       "Bash(xargs -I{} du -k \"{}\")",
-      "Bash(curl -s \"https://api.github.com/repos/Mohamad-Abbasi/anki-web-app/actions/runs?per_page=3\")"
+      "Bash(curl -s \"https://api.github.com/repos/Mohamad-Abbasi/anki-web-app/actions/runs?per_page=3\")",
+      "Bash(sed -i 's/expect\\(r.interval\\).toBe\\(25\\);/expect\\(r.interval\\).toBe\\(999\\);/' src/lib/scheduler/scheduler.test.js)",
+      "Bash(npm test *)"
     ]
   }
 }

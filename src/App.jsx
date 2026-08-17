@@ -12,7 +12,7 @@ import { useState, useEffect } from 'react';
 import { AuthProvider, useAuth } from './auth/AuthContext.jsx';
 import { SyncProvider } from './auth/SyncContext.jsx';
 import { cloudEnabled } from './lib/supabase/client.js';
-import { pullShared, pullProgress, flushOutbox } from './lib/supabase/sync.js';
+import { pullShared, pullProgress, pullDaily, flushQueue } from './lib/supabase/sync.js';
 
 function AppRoutes() {
   return (
@@ -54,9 +54,10 @@ function SyncGate() {
     let alive = true;
     (async () => {
       try {
-        await flushOutbox();              // ابتدا پیشرفت آفلاینِ معوق را بفرست
+        await flushQueue();               // ابتدا تغییرات آفلاینِ معوق را بفرست
         await pullShared();               // افزایشی (اولین بار کامل، چون lastPulledAt خالی است)
         await pullProgress(user.id);
+        await pullDaily(user.id);
       } catch (e) { console.error('sync error:', e); }
       if (alive) setReady(true);
     })();

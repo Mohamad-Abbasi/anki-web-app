@@ -1,10 +1,12 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useDecks } from '../hooks/useDecks.js';
 import { renameDeck, getDecks } from '../lib/database/models.js';
 import { cloudEnabled } from '../lib/supabase/client.js';
 import { pushDeckTree, getSyncUser, cloudDeleteDeck } from '../lib/supabase/sync.js';
 import { useAuth } from '../auth/AuthContext.jsx';
+import { buildDeckTree, flattenTree, collectDeckIds } from '../lib/deckTree.js';
+import CustomStudy from './CustomStudy.jsx';
 
 export default function DeckList() {
   const { decks, counts, loading, addNewDeck, removeDeck, refresh } = useDecks();
@@ -15,7 +17,20 @@ export default function DeckList() {
   const [importing, setImporting] = useState(false);
   const [progress, setProgress] = useState(null);
   const [toast, setToast] = useState(null);
+  const [collapsed, setCollapsed] = useState(() => new Set());
+  const [customFor, setCustomFor] = useState(null);
   const fileRef = useRef(null);
+
+  const tree = useMemo(() => buildDeckTree(decks, counts), [decks, counts]);
+  const rows = useMemo(() => flattenTree(tree, collapsed), [tree, collapsed]);
+
+  const toggle = useCallback((key) => {
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  }, []);
 
   const flash = useCallback((msg) => {
     setToast(msg);
@@ -116,47 +131,78 @@ export default function DeckList() {
         </div>
       )}
 
-      {decks.map((deck) => {
-        const c = counts[deck.id] || {};
-        const total = (c.new || 0) + (c.learn || 0) + (c.review || 0);
+      {rows.map((node) => {
+        const deck = node.deck;
+        const c = node.counts;
+        const total = c.new + c.learn + c.review;
+        // گره‌ی بدون دکِ واقعی (فقط والدِ نام‌گذاری) قابل مطالعه نیست.
+        const studyId = deck ? deck.id : collectDeckIds(node)[0];
         return (
-          <div className="deck" key={deck.id}>
-            <div className="grow" onClick={() => navigate(`/study/${deck.id}`)} style={{ cursor: 'pointer' }}>
-              <h3>{deck.name}</h3>
+          <div className="deck" key={node.key} style={{ marginInlineStart: node.depth * 16 }}>
+            {node.hasChildren ? (
+              <button className="icon-btn twisty" onClick={() => toggle(node.key)} title="باز/بسته">
+                {collapsed.has(node.key) ? '▸' : '▾'}
+              </button>
+            ) : <span className="twisty-spacer" />}
+
+            <div
+              className="grow"
+              onClick={() => studyId && navigate(`/study/${studyId}`)}
+              style={{ cursor: studyId ? 'pointer' : 'default' }}
+            >
+              <h3>{node.title}</h3>
               <div className="counts">
-                <span className="pill new">جدید {c.new || 0}</span>
-                <span className="pill learn">یادگیری {c.learn || 0}</span>
-                <span className="pill review">مرور {c.review || 0}</span>
+                <span className="pill new">جدید {c.new}</span>
+                <span className="pill learn">یادگیری {c.learn}</span>
+                <span className="pill review">مرور {c.review}</span>
               </div>
             </div>
-            <button className="icon-btn" title="مرور کارت‌ها / Browse" onClick={() => navigate(`/browse/${deck.id}`)}>✎</button>
-            <button
-              className="icon-btn"
-              title="تغییر نام / Rename"
-              onClick={async () => {
-                const name = prompt('نام جدید دک / New deck name:', deck.name);
-                if (name && name.trim()) { await renameDeck(deck.id, name.trim()); await refresh(); }
-              }}
-            >✏️</button>
-            {isAdmin && (
-              <button
-                className="icon-btn"
-                title="حذف دک / Delete (admin)"
-                onClick={async () => {
-                  if (!confirm(`دک «${deck.name}» و همه‌ی کارت‌هایش حذف شود؟ / Delete deck?`)) return;
-                  if (cloudEnabled && deck.cloudId) {
-                    try { await cloudDeleteDeck(deck.cloudId); } catch (e) { flash('خطای حذف ابری / Cloud delete error: ' + e.message); }
-                  }
-                  await removeDeck(deck.id);
-                }}
-              >🗑</button>
+
+            {deck && (
+              <>
+                <button className="icon-btn" title="مطالعه‌ی سفارشی / Custom study" onClick={() => setCustomFor(deck)}>⚙</button>
+                <button className="icon-btn" title="مرور کارت‌ها / Browse" onClick={() => navigate(`/browse/${deck.id}`)}>✎</button>
+                <button
+                  className="icon-btn"
+                  title="تغییر نام / Rename"
+                  onClick={async () => {
+                    const newName = prompt('نام جدید دک / New deck name:', deck.name);
+                    if (newName && newName.trim()) { await renameDeck(deck.id, newName.trim()); await refresh(); }
+                  }}
+                >✏️</button>
+                {isAdmin && (
+                  <button
+                    className="icon-btn"
+                    title="حذف دک / Delete (admin)"
+                    onClick={async () => {
+                      if (!confirm(`دک «${deck.name}» و همه‌ی کارت‌هایش حذف شود؟ / Delete deck?`)) return;
+                      if (cloudEnabled && deck.cloudId) {
+                        try { await cloudDeleteDeck(deck.cloudId); } catch (e) { flash('خطای حذف ابری / Cloud delete error: ' + e.message); }
+                      }
+                      await removeDeck(deck.id);
+                    }}
+                  >🗑</button>
+                )}
+              </>
             )}
-            <button className="btn primary" onClick={() => navigate(`/study/${deck.id}`)} disabled={total === 0}>
+
+            <button className="btn primary" onClick={() => studyId && navigate(`/study/${studyId}`)} disabled={total === 0}>
               {total > 0 ? 'مطالعه' : 'تمام'}
             </button>
           </div>
         );
       })}
+
+      {customFor && (
+        <CustomStudy
+          deck={customFor}
+          onClose={() => setCustomFor(null)}
+          onStart={(params) => {
+            setCustomFor(null);
+            navigate(`/study/${customFor.id}?${params}`);
+          }}
+        />
+      )}
 
       <footer className="credit">
         ساخته‌شده توسط <b>محمد عباسی</b> · برنامه‌نویس
